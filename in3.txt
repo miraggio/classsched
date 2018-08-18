@@ -1,0 +1,33 @@
+#rooms 513 514 515-A 515-B 201-A1 201-A3 201-A3 201-A4
+#classes Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Lunch Anime MentalMath Empty
+#teachers  Екатерина Мария Татьяна Настя Гуранда Юлия Алеся Владлен Jocker
+#groups K3-4A K5-6A K7-8A K7-8C K9-10C T11-12A T11-12B
+#
+#room 513 K3-4A K5-6A EnglishKids English Humanities WhoIsWho Animals Chess Games
+#room 513 Video Art
+#room 514  EnglishKids English Humanities WhoIsWho Animals Chess Games
+#room 515-A  EnglishKids English Humanities WhoIsWho Animals Chess Games
+#room 515-B  Empty
+#room 201-A1  English Science Video Humanities EnglishKids WhoIsWho Animals   Chess Games
+#room 201-A2  Science MentalMath
+#room 201-A3  Video
+#room 201-A4  Art Anime
+#room Canteen Lunch
+#
+#teacher Екатерина Games English EnglishKids
+#teacher Мария     Video EnglishKids Science Humanities
+#teacher Татьяна   English EnglishKids Science WhoIsWho Animals Games
+#teacher Настя     EnglishKids Animals Games Science Humanities WhoIsWho Animals
+#teacher Гуранда   English EnglishKids
+#teacher Юлия      WhoIsWho Video
+#teacher Алеся     Art Anime
+#teacher Владлен   Chess
+#teacher Lunch     Lunch
+#
+#group K3-4A 10 9:00  11:00 12:00 Humanities:80 Chess:40
+#group K5-6A 10 9:00 11:00 12:00 Video:60 Science:30 Chess:30 Lunch:20 Anime:30 Games:30 Video:30 Art:40
+#group K7-8A 10 9:00 11:00 12:00 Video:50 Science:30  Anime:30 Lunch:20 Chess:30 Games:30 Art:40
+##group K7-8C 10 9:00
+##group K9-10C 10 9:00
+##group T11-12A 10 9:00
+##group T11-12B 10 9:00
