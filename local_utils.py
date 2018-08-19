@@ -94,4 +94,27 @@ class ProgressBar:
         sys.stderr.write("\n")
 
 
+class Time:
+    h = 9
+    m = 0
+    def __init__(self, h, m):
+        self.h = h
+        self.m = m
+    def __str__(self):
+        return '{:02d}:{:02d}'.format(self.h, self.m)
+    def __gt__(self, other):
+        return self.minutes() > other.minutes()
+    def __lt__(self, other):
+        return self.minutes() < other.minutes()
+    def add(self, mins):
+        mm = self.h * 60 + self.m + mins
+        hh = int(mm / 60)
+        mm = mm % 60
+        return Time(hh, mm)
+    def minutes(self):
+        return self.h * 60 + self.m
+#-
 
+def str_time(s):
+    hm = s.split(":")
+    return Time(int(hm[0]), int(hm[1]))

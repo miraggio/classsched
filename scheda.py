@@ -4,59 +4,53 @@ import sys
 from copy import deepcopy
 from operator import methodcaller
 import local_utils as LU
+import debug_log as log
+import xls
 
 # constants
 
-__debug = True
-_rooms = []
-_teachers = []
-_groups = []
-_schedules = []
-
-_permuts = {}
-
-roomlist = []
-teacherlist = []
-classlist = []
-grouplist = []
-
-_lunch_class = "Lunch"
-
+LUNCH_CLASS = "Lunch"
+LUNCH_TIME_FRAME = "LunchWindow"
 
 def is_room(x):
-    return x in roomlist
+    return x in G.roomlist
 def is_teacher(x):
-    return x in teacherlist
+    return x in G.teacherlist
 def is_class(x):
-    return x in classlist
+    return x in G.classlist
 def is_group(x):
-    return x in grouplist
+    return x in G.grouplist
 
 def check_lists():
-    for x in roomlist:
+    for x in G.roomlist:
         if is_teacher(x) or is_class(x) or is_group(x):
-            print "Duplicate entry: ", x
+            Log.e("Duplicate entry: ", x)
             return False
-    for x in teacherlist:
+    for x in G.teacherlist:
         if is_room(x) or is_class(x) or is_group(x):
-            print "Duplicate entry: ", x
+            Log.e("Duplicate entry: ", x)
             return False
-    for x in classlist:
+    for x in G.classlist:
         if is_teacher(x) or is_room(x) or is_group(x):
-            print "Duplicate entry: ", x
+            Log.e("Duplicate entry: ", x)
             return False
-    for x in grouplist:
+    for x in G.grouplist:
         if is_teacher(x) or is_class(x) or is_room(x):
-            print "Duplicate entry: ", x
+            Log.e("Duplicate entry: ", x)
             return False
     return True
 #-
 
+def first_subf(field):
+    x = field.split(":")
+    return x[0]
+
+
 def filter_from_dict(values, dict):
     ret = []
     for x in values:
-        v = x.split(":")
-        if v[0] in dict:
+        v = first_subf(x)
+        if v in dict:
             ret.append(x)
     return ret
 #-
@@ -81,8 +75,8 @@ class Attribute:
     def __str__(self):
         return self.name
     def add(self, fields):
-        class_names = filter_from_dict(fields, classlist)
-        group_names = filter_from_dict(fields, grouplist)
+        class_names = filter_from_dict(fields, G.classlist)
+        group_names = filter_from_dict(fields, G.grouplist)
         for gn in group_names:
             if gn not in self.group_class.keys():
                 self.group_class[gn] = []
@@ -103,36 +97,16 @@ class Class:
     name = ''
     duration = 0
     def __init__(self, name_duration):
-        self.name, duration = name_duration.split(":")
+        v = name_duration.split(":")
+        self.name, duration = v[0], v[1]
         self.duration = int(duration)
         #print self
     def __str__(self):
         return '{:s}:{:d}'.format(self.name, self.duration)
 #-
 
-class Time:
-    h = 9
-    m = 0
-    def __init__(self, h, m):
-        self.h = h
-        self.m = m
-    def __str__(self):
-        return '{:02d}:{:02d}'.format(self.h, self.m)
-    def __gt__(self, other):
-        return self.minutes() > other.minutes()
-    def __lt__(self, other):
-        return self.minutes() < other.minutes()
-    def add(self, mins):
-        mm = self.h * 60 + self.m + mins
-        hh = int(mm / 60)
-        mm = mm % 60
-        return Time(hh, mm)
-    def minutes(self):
-        return self.h * 60 + self.m
-#-
-
 def minutes2Time(mins):
-    return Time(mins / 60, mins % 60)
+    return LU.Time(mins / 60, mins % 60)
 
 def time_overlap(start1, end1, start2, end2):
     start1m = start1.minutes()
@@ -146,11 +120,6 @@ def time_overlap(start1, end1, start2, end2):
     else:
         overlap = not ((stop2m <= start1m) or (start2m >= stop1m))
     return overlap
-#-
-
-def str_time(s):
-    hm = s.split(":")
-    return Time(int(hm[0]), int(hm[1]))
 #-
 
 def getAttributes(attrs, cl, grp):
@@ -167,11 +136,11 @@ def getAttributes(attrs, cl, grp):
 #-
 
 def getRooms(cl, grp):
-    return getAttributes(_rooms, cl, grp)
+    return getAttributes(G.rooms, cl, grp)
 #-
 
 def getTeachers(cl, grp):
-    return getAttributes(_teachers, cl, grp)
+    return getAttributes(G.teachers, cl, grp)
 #-
 
 class Sched_option_item:
@@ -202,7 +171,7 @@ class Sched_option_item:
     def show_selection(self):
         t_str = self.teacher_names[self.sel_teacher]
         r_str = self.room_names[self.sel_room]
-        return '{:s} {:10s} {:s}-{:s} {:s} {:s}'.format(self.is_ok, \
+        return '{:s} {:10s} {:s} {:s} {:s} {:s}'.format(self.is_ok, \
                 self.class_name, self.tstart, self.tend, r_str, t_str)
     def __str__(self):
         t_str = LU.list2str(self.teacher_names)
@@ -274,9 +243,9 @@ class Sched_option:
 class Group:
     name = ''
     size = 0
-    start = Time(9, 0)
-    lfrom = Time(9, 0)
-    lto = Time(9, 0)
+    start = LU.Time(9, 0)
+    lunch_earlyest_time = None
+    lunch_latest_time = None
     classes = None
     class_room_options = None
     class_teacher_options = None
@@ -288,18 +257,17 @@ class Group:
     def __init__(self, fields):
         self.name = fields[1]
         self.size = fields[2]
-        self.start = str_time(fields[3])
-        self.lfrom = str_time(fields[4])
-        class_names = filter_from_dict(fields[5:], classlist)
+        self.start = LU.str_time(fields[3])
+        fields = fields[4:]
+
+        class_names = filter_from_dict(fields, G.classlist)
 
         classes = []
         for cl in class_names:
-            new_class = Class(cl)
-            classes.append(new_class)
-            if new_class.name == _lunch_class:
-                print self.name, "has Lunch from", self.lfrom
-                self.has_lunch = True
+            classes.append(Class(cl))
         self.classes = classes
+
+        self.__setup_lunch(fields)
 
         class_room_options = {}
         for cl in self.classes:
@@ -317,6 +285,18 @@ class Group:
 
         self.gen_permutations()
 
+    def __setup_lunch(cls, fields):
+        for x in fields:
+            if first_subf(x) == LUNCH_CLASS:
+                v = x.split(":")
+
+                cls.lunch_earlyest_time, cls.lunch_latest_time = \
+                        [LU.Time(int(v[2]),int(v[3])), LU.Time(int(v[4]),int(v[5]))]
+                cls.has_lunch = True
+                Log.d('{:s} has {:d} minutes lunch wich starts in a window {:s}-{:s}'.format(\
+                        cls.name, int(v[1]), cls.lunch_earlyest_time, cls.lunch_latest_time))
+                break
+
     def show(self):
         print "----------------"
         print "Group", self.name, 'size', self.size, 'starts at', self.start
@@ -328,10 +308,10 @@ class Group:
 
     def gen_permutations(self):
         size = len(self.classes)
-        if size not in _permuts.keys():
-            _permuts[size] = list(itertools.permutations(range(size)))
-        self.num_scheds = len(_permuts[size])
-        print "Group ", self.name, self.num_scheds, " options "
+        if size not in G.permuts.keys():
+            G.permuts[size] = list(itertools.permutations(range(size)))
+        self.num_scheds = len(G.permuts[size])
+        Log.d("Group ", self.name, self.num_scheds, " options ")
 
     def get_current_option_no(self):
         return self.current_option
@@ -339,15 +319,15 @@ class Group:
     def gen_current_option(self):
         self.schedule = []
         size = len(self.classes)
-        order = _permuts[size][self.current_option]
-        print self.name, "option order", self.current_option, order
+        order = G.permuts[size][self.current_option]
+        Log.v(self.name, "option order", self.current_option, order)
 
         t = self.start
 
         for k in order:
             cl = self.classes[k]
-            if self.has_lunch and (cl.name == _lunch_class):
-                if t < self.lfrom:
+            if self.has_lunch and (cl.name == LUNCH_CLASS):
+                if t < self.lunch_earlyest_time or t > self.lunch_latest_time:
                     # Lunch starts not in lunch time window
                     return False
             item = Sched_option_item(cl.name, self.class_room_options[cl.name], \
@@ -384,12 +364,12 @@ class Group:
         # we want to make sure option in position 'bad_pos' has moved
         # to other position in new order
         size = len(self.classes)
-        bad_order = _permuts[size][self.current_option]
+        bad_order = G.permuts[size][self.current_option]
         bad_item_no = bad_order[pad_pos]
 
         n = self.current_option + 1
         while n < self.num_scheds:
-            order = _permuts[size][n]
+            order = G.permuts[size][n]
             if order[pad_pos] != bad_item_no:
                 ret = self.gen_option_no(n)
                 if ret:
@@ -487,8 +467,8 @@ class CommonSched:
             n_options *= item.nr
             n_options *= item.nt
         self.n_options *= n_options
-        print 'Added {:s} with {:d} options, total {:d} options\n'.format(grp.name, \
-                n_options, self.n_options)
+        Log.d('Added {:s} with {:d} options, total {:d} options\n'.format(grp.name, \
+                n_options, self.n_options))
     def adjust(self, debug=False, verbose=False):
         ret = False
         # (0) iterate over groups
@@ -497,11 +477,11 @@ class CommonSched:
             # (1) try group order options
             while True:
 
-                if verbose:
-                    print "Trying classes order, group", grp.name
+                if Log.verbose():
+                    sys.stderr.write("Trying classes order, group {:s}\n".format(grp.name))
                     for item in grp.schedule:
-                        print item.show_selection()
-                    print "\n"
+                        sys.stderr.write(item.show_selection() + '\n')
+                    sys.stderr.write("\n")
 
                 # (2) try add classes one-by-one
                 item_pos = 0
@@ -512,18 +492,17 @@ class CommonSched:
                         room = item.selected_room()
                         ret = self.busy_cal.try_add(item.tstart, item.tend, [room])
                         if ret:
-                            #item.ok()
-                            if debug: print "Room forund for group", grp.name, item, "selected", room
+                            Log.v("Room forund for group", grp.name, str(item), "selected", str(room))
                             break
 
-                        if debug: print "Room busy:", room
+                        Log.v("Room busy:", str(room))
                         ret = item.next_room()
                         if not ret:
-                            if debug: print "No room available for class", item
+                            Log.d("No room available for class", str(item))
                             break
                     # (3) end if room can be added or is busy during thos class time
                     if not ret:
-                        if debug: print "Completely failed adding class (no room):", grp.name, item
+                        Log.v("Completely failed adding class (no room):", grp.name, str(item))
                         break
 
                     # (4) Try if techer can be added or is busy during this class time
@@ -532,20 +511,20 @@ class CommonSched:
                         teacher = item.selected_teacher()
                         ret = self.busy_cal.try_add(item.tstart, item.tend, [teacher])
                         if ret:
-                            item.ok()
-                            if debug: print "Teacher found for group", grp.name, item, "selected", teacher
+                            Log.v("Teacher found for group", grp.name, str(item), "selected", str(teacher))
                             break
 
-                        if debug: print "Teacher busy", teacher
+                        Log.v("Teacher busy", str(teacher))
                         ret = item.next_teacher()
                         if not ret:
-                            if debug: print "No teacher available for class", item
+                            Log.v("No teacher available for class", str(item))
                             break
 
                     # (4) end if techer can be added or is busy during thos class time
                     if not ret:
-                        if debug: print "Completely failed adding class (no teacher):", grp.name, item
+                        Log.v("Completely failed adding class (no teacher):", grp.name, str(item))
                         break
+                    item.ok()
                     # will try adding next class in this schedule
                     item_pos += 1
                 # (2) end try add classes one-by-one
@@ -554,20 +533,21 @@ class CommonSched:
                     ret = grp.gen_next_option_move_bad(item_pos)
                     #ret = grp.gen_next_option()
                     if not ret:
-                        if debug: print "No more classes order options for ", grp.name
+                        Log.v("No more classes order options for ", grp.name)
                         break
-                    if debug: print "Try next classes order options for ", grp.name
+                    Log.v("Try next classes order options for ", grp.name)
                 else:
-                    # sore busy calendar
+                    # store busy calendar
                     self.busy_cal.commit()
-                    print "Success! Gropup added ", grp.name
-                    for item in grp.schedule:
-                        print item.show_selection()
-                    self.busy_cal.show()
+                    Log.d("Success! Gropup added ", grp.name)
+                    if Log.verbose():
+                        for item in grp.schedule:
+                            print item.show_selection()
+                        self.busy_cal.show()
                     break
             # (1) end group order options
             if not ret:
-                print "Completely failed adding group:", grp.name
+                Log.v("Completely failed adding group:", grp.name)
                 break
         # (0) end iterate over groups
         return ret
@@ -578,6 +558,15 @@ class CommonSched:
             for item in grp.schedule:
                 print item.show_selection()
             print "\n"
+
+    def current_sched_as_list(cls):
+        ret = []
+        for grp in cls.g_items:
+            for item in grp.schedule:
+                s = ' '.join([grp.name, item.show_selection()])
+                ret.append(s)
+        return ret
+
 #}
 
 
@@ -591,56 +580,70 @@ def name_exist_in(records, rn):
 #-
 
 def Show_Roms():
-    for r in _rooms:
+    for r in G.rooms:
         r.show()
 
 def Show_Teachers():
-    for r in _teachers:
+    for r in G.teachers:
         r.show()
 
 def get_input(f):
-    global _rooms, _teachers, roomlist, teacherlist, classlist, grouplist
     for line in f:
         line = line.strip()
         fields = line.split()
 
         if fields[0] == '#room':
-            r = name_exist_in(_rooms, fields[1])
+            r = name_exist_in(G.rooms, fields[1])
             if r:
                 r.add(fields[2:])
             else:
                 r = Attribute("room", fields[1:])
-                _rooms.append(r)
+                G.rooms.append(r)
 
         if fields[0] == '#teacher':
-            r = name_exist_in(_teachers, fields[1])
+            r = name_exist_in(G.teachers, fields[1])
             if r:
                 r.add(fields[2:])
             else:
                 r = Attribute("teacher", fields[1:])
-                _teachers.append(r)
+                G.teachers.append(r)
 
 
         if fields[0] == '#group':
             r = Group(fields)
-            _groups.append(r)
+            G.groups.append(r)
 
         if fields[0] == '#rooms':
-            roomlist = fields[1:]
-            LU.print_list("Rooms:", roomlist, "\t")
+            G.roomlist = fields[1:]
+            LU.print_list("Rooms:", G.roomlist, "\t")
         if fields[0] == '#teachers':
-            teacherlist = fields[1:]
-            LU.print_list("Teachers:", teacherlist, "\t")
+            G.teacherlist = fields[1:]
+            LU.print_list("Teachers:", G.teacherlist, "\t")
         if fields[0] == '#classes':
-            classlist = fields[1:]
-            LU.print_list("Classes:", classlist, "\t")
+            G.classlist = fields[1:]
+            LU.print_list("Classes:", G.classlist, "\t")
         if fields[0] == '#groups':
-            grouplist = fields[1:]
-            LU.print_list("Groups:", grouplist, "\t")
+            G.grouplist = fields[1:]
+            LU.print_list("Groups:", G.grouplist, "\t")
 #}
 
 
+class Global:
+    rooms = []
+    teachers = []
+    groups = []
+    permuts = {}
+    roomlist = []
+    teacherlist = []
+    classlist = []
+    grouplist = []
+
+G = Global()
+
+Log = log.Debug(log.WARNING)
+
 def main():
+
     get_input(sys.stdin)
     check_lists()
     Show_Roms()
@@ -649,13 +652,15 @@ def main():
     print "\n\n1 ---\n\n"
 
     CS = CommonSched()
-    for grp in _groups:
+    for grp in G.groups:
         CS.add_group(grp)
-    ret = CS.adjust(True, True)
+    ret = CS.adjust()
 
     CS.show_last()
 
-    print "\n\n2---\n\n"
+    sch = CS.current_sched_as_list()
+    x = xls.XlsBook("sched.xlsx", sch)
+
 
 
 main()
