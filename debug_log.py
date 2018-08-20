@@ -7,11 +7,16 @@ VERBOSE = 3
 
 class Debug:
     level = 0
-    def __init__(self, level):
+    out = None
+    def __init__(self, level, out="stderr"):
         self.level = level
+        self.out = out
     def __pr(self, prefix, level, *args):
         if self.level >= level:
-            sys.stderr.write(prefix + ": " + ' '.join(map(str,args)) + '\n')
+            if self.out == "stdout":
+                sys.stdout.write(prefix + ": " + ' '.join(map(str,args)) + '\n')
+	    else:
+                sys.stderr.write(prefix + ": " + ' '.join(map(str,args)) + '\n')
     def e(cls, *args):
         cls.__pr("E", ERROR, args)
     def w(cls, *args):
