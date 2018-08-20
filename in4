@@ -1,6 +1,6 @@
 #rooms 513 514 515-A 515-B 201-A1 201-A3 201-A3 201-A4
 #classes Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Lunch Anime MentalMath Empty
-#teachers  Ekaterina Mary Nastja Nastja Guranda Julia Alesia Vlaslen Jocker
+#teachers  Ekaterina Mary Nastja Nastja Guranda Julia Alesia Vladlen Jocker
 #groups K3-4A K5-6A K7-8A K7-8C K9-10C T11-12A T11-12B
 #
 #room 513 K3-4A K5-6A EnglishKids English Humanities WhoIsWho Animals Games
@@ -21,7 +21,7 @@
 #teacher Guranda   English EnglishKids
 #teacher Julia      WhoIsWho Video
 #teacher Alesia     Art Anime
-#teacher Vlaslen   Chess
+#teacher Vladlen   Chess
 #teacher Lunch     Lunch
 #
 #group K3-4A 10 9:00    Humanities:80 Chess:40
@@ -29,7 +29,7 @@
 #group K5-6A 10 9:00   Video:60 Science:30 Anime:30 Games:30 Video:30 Art:40 Chess:30 Lunch:20:11:00:12:00
 #
 #
-##group K7-8A 10 9:00 11:00  Video:50 Science:30  Anime:30 Lunch:20:11:00:12:00 Chess:30 Games:30 Art:40
+#group K7-8A 10 9:00 11:00  Video:50 Science:30  Anime:30 Lunch:20:11:00:12:00 Chess:30 Games:30 Art:40
 ##group K7-8C 10 9:00
 ##group K9-10C 10 9:00
 ##group T11-12A 10 9:00
