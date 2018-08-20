@@ -409,26 +409,29 @@ class BusyCalendar:
         self.cal = {}
         self.temp = {}
 
-    def try_add(self, startT, endT, keylist):
-        new = [startT.minutes(), endT.minutes()]
-        for key in keylist:
-            if key in self.ignore_list:
-                continue
-            if key in self.cal.keys():
-                busy = self.cal[key]
-                for item in busy:
-                    start = item[0]
-                    end = item[1]
+    def try_add(self, startT, endT, key):
+        start_min, end_min = [startT.minutes(), endT.minutes()]
 
-                    if new[1] <= start or new[0] >= end:
-                        return False
+        if key in self.ignore_list:
+            return True
 
-        for key in keylist:
-            if key in self.ignore_list:
-                continue
-            if not key in self.temp.keys():
-                self.temp[key] = []
-            self.temp[key].append(new)
+        if key in self.cal.keys():
+            busy = self.cal[key]
+            for item in busy:
+                start, end = item
+                if not (end_min <= start or start_min >= end):
+                    return False
+
+        if key in self.temp.keys():
+            busy = self.temp[key]
+            for item in busy:
+                start, end = item
+                if not (end_min <= start or start_min >= end):
+                    return False
+
+        if key not in self.temp.keys():
+            self.temp[key] = []
+        self.temp[key].append([start_min, end_min])
         return True
 
     def commit(self):
@@ -449,7 +452,12 @@ class BusyCalendar:
             busy = self.cal[key]
             for times in busy:
                 print '\t{:s}-{:s}'.format(minutes2Time(times[0]), minutes2Time(times[1]))
-            print "\n"
+        print "--temp:"
+        for key in self.temp.keys():
+            print "\t", key
+            busy = self.temp[key]
+            for times in busy:
+                print '\t{:s}-{:s}'.format(minutes2Time(times[0]), minutes2Time(times[1]))
 #}
 
 class CommonSched:
@@ -490,7 +498,7 @@ class CommonSched:
                     item.rewind_room()
                     while True:
                         room = item.selected_room()
-                        ret = self.busy_cal.try_add(item.tstart, item.tend, [room])
+                        ret = self.busy_cal.try_add(item.tstart, item.tend, room)
                         if ret:
                             Log.v("Room forund for group", grp.name, str(item), "selected", str(room))
                             break
@@ -509,7 +517,7 @@ class CommonSched:
                     item.rewind_teacher()
                     while True:
                         teacher = item.selected_teacher()
-                        ret = self.busy_cal.try_add(item.tstart, item.tend, [teacher])
+                        ret = self.busy_cal.try_add(item.tstart, item.tend, teacher)
                         if ret:
                             Log.v("Teacher found for group", grp.name, str(item), "selected", str(teacher))
                             break
@@ -640,7 +648,7 @@ class Global:
 
 G = Global()
 
-Log = log.Debug(log.WARNING)
+Log = log.Debug(log.VERBOSE, "stdout")
 
 def main():
 
@@ -659,8 +667,7 @@ def main():
     CS.show_last()
 
     sch = CS.current_sched_as_list()
-    x = xls.XlsBook("sched.xlsx", sch)
-
+    xls.save_sched_xls("sched.xlsx", sch)
 
 
 main()
