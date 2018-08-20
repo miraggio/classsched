@@ -165,6 +165,8 @@ class Sched_option_item:
         self.nt = len(self.teacher_names)
     def ok(self):
         self.is_ok = "*"
+    def nok(self):
+        self.is_ok = " "
     def make_copy(self):
         return Sched_option_item(self.class_name, self.room_names, self.teacher_names, \
                 self.tstart, self.tend)
@@ -352,7 +354,7 @@ class Group:
         return False
 
     def gen_next_option(self):
-        n = self.current_option
+        n = self.current_option + 1
         while n < self.num_scheds:
             ret = self.gen_option_no(n)
             if ret:
@@ -386,6 +388,11 @@ class Group:
                 print item
     def opt_range(self):
         return self.num_scheds
+
+    def set_nok(cls):
+        for item in cls.schedule:
+            item.nok()
+
     def next_teacher(self):
         for item in self.schedule:
             if item.next_teacher():
@@ -409,55 +416,64 @@ class BusyCalendar:
         self.cal = {}
         self.temp = {}
 
-    def try_add(self, startT, endT, key):
-        start_min, end_min = [startT.minutes(), endT.minutes()]
-
+    def try_add(self, startT, endT, key, group):
         if key in self.ignore_list:
             return True
-
-        if key in self.cal.keys():
-            busy = self.cal[key]
-            for item in busy:
-                start, end = item
-                if not (end_min <= start or start_min >= end):
-                    return False
-
-        if key in self.temp.keys():
-            busy = self.temp[key]
-            for item in busy:
-                start, end = item
-                if not (end_min <= start or start_min >= end):
-                    return False
+        for grp in self.cal.keys():
+            calendar = self.cal[grp]
+            ret = self.__check_calendar(startT, endT, key, calendar)
+            if not ret:
+                return False
 
         if key not in self.temp.keys():
             self.temp[key] = []
+        start_min, end_min = [startT.minutes(), endT.minutes()]
         self.temp[key].append([start_min, end_min])
         return True
 
-    def commit(self):
+    def __check_calendar(self, startT, endT, key, calendar):
+        start_min, end_min = [startT.minutes(), endT.minutes()]
+        if key in calendar.keys():
+            busy = calendar[key]
+            for item in busy:
+                start, end = item
+                if not (end_min <= start or start_min >= end):
+                    print "Calendar conflict: {:s} {:s}-{:s} <> {:s}-{:s}".format(key, minutes2Time(start), minutes2Time(end), startT, endT)
+                    return False
+        return True
+
+    def commit(self, group):
+        if group not in self.cal.keys():
+            self.cal[group] = {}
+        calendar = self.cal[group]
+
         for key in self.temp.keys():
-            if not key in self.cal.keys():
-                self.cal[key] = []
+            if not key in calendar.keys():
+                calendar[key] = []
             for val in self.temp[key]:
-                self.cal[key].append(val)
+                calendar[key].append(val)
         self.temp = {}
 
     def drop(self):
         self.temp = {}
 
+    def remove_group(cls, group):
+        if group in cls.cal.keys():
+            del cls.cal[group]
+
     def show(self):
         print "BusyCalendar"
-        for key in self.cal.keys():
-            print "\t", key
-            busy = self.cal[key]
-            for times in busy:
-                print '\t{:s}-{:s}'.format(minutes2Time(times[0]), minutes2Time(times[1]))
+        for grp in self.cal.keys():
+            calendar = self.cal[grp]
+            for key in calendar.keys():
+                busy = calendar[key]
+                for times in busy:
+                    print '\t{:10s} {:10s} {:s}-{:s}'.format(grp, key, minutes2Time(times[0]), minutes2Time(times[1]))
         print "--temp:"
         for key in self.temp.keys():
-            print "\t", key
             busy = self.temp[key]
             for times in busy:
-                print '\t{:s}-{:s}'.format(minutes2Time(times[0]), minutes2Time(times[1]))
+                print '\t{:10s} {:10s} {:s}-{:s}'.format('temp', key, minutes2Time(times[0]), minutes2Time(times[1]))
 #}
 
 class CommonSched:
@@ -467,6 +483,7 @@ class CommonSched:
     def __init__(self):
         self.g_items = []
         self.busy_cal = BusyCalendar(["Lunch", "Canteen"])
+
     def add_group(self, grp):
         grp.set_first_option()
         self.g_items.append(grp)
@@ -477,11 +494,13 @@ class CommonSched:
         self.n_options *= n_options
         Log.d('Added {:s} with {:d} options, total {:d} options\n'.format(grp.name, \
                 n_options, self.n_options))
+
     def adjust(self, debug=False, verbose=False):
         ret = False
         # (0) iterate over groups
         for grp in self.g_items:
-
+            grp.set_nok()
+            self.busy_cal.remove_group(grp.name)
             # (1) try group order options
             while True:
 
@@ -498,9 +517,9 @@ class CommonSched:
                     item.rewind_room()
                     while True:
                         room = item.selected_room()
-                        ret = self.busy_cal.try_add(item.tstart, item.tend, room)
+                        ret = self.busy_cal.try_add(item.tstart, item.tend, room, grp.name)
                         if ret:
-                            Log.v("Room forund for group", grp.name, str(item), "selected", str(room))
+                            Log.v("Room found for group", grp.name, str(item), "selected", str(room))
                             break
 
                         Log.v("Room busy:", str(room))
@@ -517,7 +536,7 @@ class CommonSched:
                     item.rewind_teacher()
                     while True:
                         teacher = item.selected_teacher()
-                        ret = self.busy_cal.try_add(item.tstart, item.tend, teacher)
+                        ret = self.busy_cal.try_add(item.tstart, item.tend, teacher, grp.name)
                         if ret:
                             Log.v("Teacher found for group", grp.name, str(item), "selected", str(teacher))
                             break
@@ -546,7 +565,7 @@ class CommonSched:
                     Log.v("Try next classes order options for ", grp.name)
                 else:
                     # store busy calendar
-                    self.busy_cal.commit()
+                    self.busy_cal.commit(grp.name)
                     Log.d("Success! Gropup added ", grp.name)
                     if Log.verbose():
                         for item in grp.schedule:
@@ -559,6 +578,16 @@ class CommonSched:
                 break
         # (0) end iterate over groups
         return ret
+
+
+    def move_for_next_adjustment(cls):
+        for grp in reversed(cls.g_items):
+            while True:
+                if grp.gen_next_option() == True:
+                    return True
+            Log.d("No more options for group", grp.name)
+        Log.d("No more options for any of groups")
+        return False
 
     def show_last(self):
         for grp in self.g_items:
@@ -657,17 +686,29 @@ def main():
     Show_Roms()
     Show_Teachers()
 
-    print "\n\n1 ---\n\n"
+
+    work_book = xls.WorkBookWriter("sched.xlsx")
 
     CS = CommonSched()
     for grp in G.groups:
         CS.add_group(grp)
     ret = CS.adjust()
 
-    CS.show_last()
+    if ret:
+        print "1 ---"
+        CS.show_last()
+        sch = CS.current_sched_as_list()
+        work_book.export(sch)
 
-    sch = CS.current_sched_as_list()
-    xls.save_sched_xls("sched.xlsx", sch)
+        ret = CS.move_for_next_adjustment()
+        ret = CS.adjust()
+    if ret:
+        print "2 ---"
+        CS.show_last()
+        sch = CS.current_sched_as_list()
+        work_book.export(sch)
+
+    work_book.save()
 
 
 main()
