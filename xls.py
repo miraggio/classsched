@@ -5,6 +5,7 @@ class CellColors:
     tbl = None
     size = 0
     idx = 0
+    special_colors = {"Universe": "red", "Jocker": "red"}
     def __init__(self):
         self.tbl = ["#00CCFF", "#CCFFFF", "#CCFFCC", "#FFFF99", \
             "#99CCFF", "#FF99CC", "#CC99FF", "#FFCC99", "#3366FF", \
@@ -13,7 +14,9 @@ class CellColors:
         self.rewind()
     def rewind(cls):
         cls.idx = -1
-    def get_next(cls):
+    def get_next(cls, name):
+        if name in cls.special_colors.keys():
+            return cls.special_colors[name]
         if cls.idx < cls.size:
             cls.idx += 1
             return cls.tbl[cls.idx]
@@ -78,12 +81,12 @@ class WorkBookWriter:
                 classes.append(cl)
 
             if teacher not in cls.teacher_to_format.keys():
-                color = cls.tcolors.get_next()
+                color = cls.tcolors.get_next(teacher)
                 cls.teacher_to_format[teacher] = cls.workbook.add_format( \
                         {'bg_color': color, 'align': 'center', 'valign': 'vcenter', 'border': 1})
 
             if room not in cls.room_to_format.keys():
-                color = cls.rcolors.get_next()
+                color = cls.rcolors.get_next(room)
                 cls.room_to_format[room] = cls.workbook.add_format( \
                         {'bg_color': color, 'align': 'center', 'valign': 'vcenter', 'border': 1})
 

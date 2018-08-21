@@ -22,7 +22,7 @@
 #teacher Юлия      WhoIsWho Video
 #teacher Алеся     Art Anime
 #teacher Владлен   Chess
-#teacher Lunch     Lunch
+#teacher LunchTeacher Lunch
 #
 #group K3-4A 10 9:00  11:00 12:00 Humanities:80 Chess:40
 #group K5-6A 10 9:00 11:00 12:00 Video:60 Science:30 Chess:30 Lunch:20 Anime:30 Games:30 Video:30 Art:40

@@ -10,8 +10,10 @@ import xls
 # constants
 
 LUNCH_CLASS = "Lunch"
-LUNCH_TEACHER = "Lunch"
-LUNCH_TIME_FRAME = "LunchWindow"
+LUNCH_TEACHER = "LunchTeacher"
+LUNCH_ROOM = "Canteen"
+JOCKER = "Jocker"
+UNIVERSE = "Universe"
 
 def is_room(x):
     return x in G.roomlist
@@ -272,9 +274,8 @@ class Group:
 
     def __init__(self, fields):
         self.name = fields[1]
-        self.size = fields[2]
-        self.start = LU.str_time(fields[3])
-        fields = fields[4:]
+        self.start = LU.str_time(fields[2])
+        fields = fields[3:]
 
         class_names = filter_from_dict(fields, G.classlist)
 
@@ -315,7 +316,7 @@ class Group:
 
     def show(self):
         print "----------------"
-        print "Group", self.name, 'size', self.size, 'starts at', self.start
+        print "Group", self.name, 'starts at', self.start
         for cl in self.classes:
             print "\t", cl
             room_options = self.class_room_options[cl.name]
@@ -344,7 +345,7 @@ class Group:
             cl = self.classes[k]
             if self.has_lunch and (cl.name == LUNCH_CLASS):
                 if t < self.lunch_earlyest_time or t > self.lunch_latest_time:
-                    Log.v('Lunch position ivalid in order {:d}'.format(self.current_option))
+                    Log.v('Lunch position invalid in order {:d}'.format(self.current_option))
                     self.curr_order_valid = False
             item = Sched_option_item(cl.name, self.class_room_options[cl.name], \
                     self.class_teacher_options[cl.name], t, t.add(cl.duration))
@@ -543,7 +544,7 @@ class CommonSched:
     n_options = 1
     def __init__(self):
         self.g_items = []
-        self.busy_cal = BusyCalendar(["Lunch", "Canteen"])
+        self.busy_cal = BusyCalendar([LUNCH_TEACHER, LUNCH_ROOM, JOCKER, UNIVERSE])
 
     def add_group(self, grp):
         grp.set_first_option()
@@ -628,11 +629,14 @@ class TeacherStat:
     n_teachers = 0
     n_classes = 0
     classes_time = 0
+    jockers = 0
+    universes = 0
 
     def __str__(cls):
-        return 'idle {:f} rchg {:d} cnum {:d}-{:d} busy {:d}-{:d} t {:d} cl {:d} time {:d} rate {:.3f}'. \
+        return 'idle {:f} rchg {:d} cnum {:d}-{:d} busy {:d}-{:d} t {:d} cl {:d} time {:d} J {:d} U {:d} rate {:.3f}'. \
         format(cls.idle_max_pct, cls.room_chg_max, cls.classes_num_min, cls.classes_num_max, \
         cls.busy_min, cls.busy_max, cls.n_teachers, cls.n_classes, cls.classes_time, \
+        cls.jockers, cls.universes,
         cls.get_penalty_rate())
 
     def __pct(self, a, b):
@@ -641,7 +645,8 @@ class TeacherStat:
     def get_penalty_rate(cls):
         pen = cls.idle_max_pct * 2 + cls.__pct(cls.room_chg_max, cls.n_classes) + \
                 cls.__pct(cls.classes_num_max - cls.classes_num_min, cls.n_classes / cls.n_teachers) + \
-                cls.__pct(cls.busy_max - cls.busy_min, cls.classes_time / cls.n_teachers)
+                cls.__pct(cls.busy_max - cls.busy_min, cls.classes_time / cls.n_teachers) + \
+                cls.jockers * 100 + cls.universes * 100
         return pen
 #-
 
@@ -652,11 +657,18 @@ def stat_schedule(items):
     teachers = []
     num_classes = 0
     classes_time = 0
+    jockers = 0
+    universes = 0
     for it in items:
         group, cl, start, stop, room, teacher = it.split()
 
         if teacher == LUNCH_TEACHER:
             continue
+
+        if teacher == JOCKER:
+            jockers += 1
+        if room == UNIVERSE:
+            jockers += 1
 
         start = LU.str_time(start)
         stop = LU.str_time(stop)
@@ -691,6 +703,8 @@ def stat_schedule(items):
     ts.n_teachers = len(teachers)
     ts.n_classes = num_classes
     ts.classes_time = classes_time
+    ts.jockers = jockers
+    ts.universes = universes
 
     for teacher in teacher_stat.keys():
         t = teacher_stat[teacher]
@@ -769,50 +783,29 @@ def get_input(f):
 #}
 
 
-class Global:
-    rooms = []
-    teachers = []
-    groups = []
-    permuts = {}
-    roomlist = []
-    teacherlist = []
-    classlist = []
-    grouplist = []
-    work_book = None
-    n_scheds_found = 0
-    scheds_to_save = None
-    best_scheds = {}
-    best_collected = 0
-    best_max = 10
-
-    def __init__(self, wb_name="sched.xlsx"):
-        self.work_book = xls.WorkBookWriter(wb_name)
-        self.scheds_to_save = []
-
-    def save_workbook(cls):
-        cls.work_book.save()
-
-G = Global("sched.xlsx")
-Log = log.Debug(log.INFO, "stdout")
-
 def save_scheduler(items):
 
     G.n_scheds_found += 1
     ts = stat_schedule(items)
     pen = ts.get_penalty_rate()
+    last = G.best_max - 1
 
-    if len(G.best_scheds.keys()) < G.best_max:
-        G.best_scheds[pen] = items
+    Log.i('New schedule, rate {:f} total {:d}'.format(pen, G.n_scheds_found))
+    Log.flush()
+    if len(G.best_scheds) < G.best_max:
+        G.best_scheds.append([pen, items])
+        if len(G.best_scheds) == G.best_max:
+            G.best_scheds.sort(key=lambda x: x[0])
     else:
-        rates = sorted(G.best_scheds.keys(), reverse=True)
-        if pen < rates[0]:
-            Log.i('rates {:f} - {:f}'.format(rates[0], rates[G.best_max-1]))
-            print rates
-            Log.i('replacing {:f} with {:f}'.format(rates[0], pen))
-            del G.best_scheds[rates[0]]
-            G.best_scheds[pen] = items
-            print sorted(G.best_scheds.keys(), reverse=True)
-            print "-"
+        if pen < G.best_scheds[last][0]:
+            Log.v('rates {:f} - {:f}'.format(G.best_scheds[0][0], G.best_scheds[last][0]))
+            Log.v(str(list(map(lambda x: x[0], G.best_scheds))))
+            Log.v('replacing {:f} with {:f}'.format(G.best_scheds[last][0], pen))
+            del G.best_scheds[last]
+            G.best_scheds.append([pen, items])
+            G.best_scheds.sort(key=lambda x: x[0])
+            Log.v(str(list(map(lambda x: x[0], G.best_scheds))))
+            Log.v("-------")
 
 def main():
 
@@ -828,18 +821,44 @@ def main():
     G.best_max = 10
 
     Log.i("Starting big work");
-    CS.adjust(100000, save_scheduler)
+    CS.adjust(1000, save_scheduler)
     Log.i('Done, {:d} generated'.format(G.n_scheds_found))
 
-
-    for rate in sorted(G.best_scheds.keys()):
-        Log.i('Schedule rate {:.3f}'.format(rate))
-        items = G.best_scheds[rate]
+    G.best_scheds.sort(key=lambda x: x[0])
+    for x in G.best_scheds:
+        Log.i('Schedule rate {:.3f}'.format(x[0]))
+        items = x[1]
         for it in items:
             Log.i(str(it))
         G.work_book.export(items)
 
     G.save_workbook()
+
+class Global:
+    rooms = []
+    teachers = []
+    groups = []
+    permuts = {}
+    roomlist = []
+    teacherlist = []
+    classlist = []
+    grouplist = []
+    work_book = None
+    n_scheds_found = 0
+    scheds_to_save = None
+    best_scheds = []
+    best_collected = 0
+    best_max = 10
+
+    def __init__(self, wb_name="sched.xlsx"):
+        self.work_book = xls.WorkBookWriter(wb_name)
+        self.scheds_to_save = []
+
+    def save_workbook(cls):
+        cls.work_book.save()
+
+G = Global("sched.xlsx")
+Log = log.Debug(log.INFO, "stdout")
 
 main()
 sys.exit()
