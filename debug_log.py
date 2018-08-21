@@ -2,8 +2,9 @@ import sys
 
 ERROR = 0
 WARNING = 1
-DEBUG = 2
-VERBOSE = 3
+INFO = 2
+DEBUG = 3
+VERBOSE = 4
 
 class Debug:
     level = 0
@@ -25,6 +26,8 @@ class Debug:
         cls.__pr("D", DEBUG, args)
     def v(cls, *args):
         cls.__pr("V", VERBOSE, args)
+    def i(cls, *args):
+        cls.__pr("I", INFO, args)
     def verbose(cls):
         return cls.level == VERBOSE
 

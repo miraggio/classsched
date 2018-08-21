@@ -30,16 +30,20 @@ class WorkBookWriter:
     worksheet = None
     first_row = 0
     time_step_min = 10
-    colors = None
+    tcolors = None
+    rcolors = None
     FIRST_COLUMN = 0
     teacher_to_format = None
+    room_to_format = None
 
     def __init__(self, name, time_step_min=10):
         self.teacher_to_format = {}
+        self.room_to_format = {}
         self.time_step_min = time_step_min
         self.workbook = xlsxwriter.Workbook(name)
         self.worksheet = self.workbook.add_worksheet()
-        self.colors = CellColors()
+        self.tcolors = CellColors()
+        self.rcolors = CellColors()
         self.format_time = self.workbook.add_format({'bold': True, 'align': 'center'})
         self.format_group = self.workbook.add_format({'bold': True, 'align': 'center'})
 
@@ -48,12 +52,11 @@ class WorkBookWriter:
         stop_row = (end.minutes() - time_start) / time_step - 1
         return [self.first_row + 1 + start_row, self.first_row + 1 + stop_row]
 
-    #expexted item "K5-6A * Video 09:00 10:00 513 Mary"
+    #expexted item "K5-6A Video 09:00 10:00 513 Mary"
     def export(cls, items):
         book = []
         rooms = []
         teachers = {}
-        teacher_to_format = {}
         groups = []
         classes = []
 
@@ -61,7 +64,7 @@ class WorkBookWriter:
         end_min = 0
 
         for s in items:
-            group, ok, cl, start, stop, room, teacher = s.split()
+            group, cl, start, stop, room, teacher = s.split()
             start = LU.str_time(start)
             stop = LU.str_time(stop)
 
@@ -75,8 +78,13 @@ class WorkBookWriter:
                 classes.append(cl)
 
             if teacher not in cls.teacher_to_format.keys():
-                color = cls.colors.get_next()
+                color = cls.tcolors.get_next()
                 cls.teacher_to_format[teacher] = cls.workbook.add_format( \
+                        {'bg_color': color, 'align': 'center', 'valign': 'vcenter', 'border': 1})
+
+            if room not in cls.room_to_format.keys():
+                color = cls.rcolors.get_next()
+                cls.room_to_format[room] = cls.workbook.add_format( \
                         {'bg_color': color, 'align': 'center', 'valign': 'vcenter', 'border': 1})
 
             minutes = stop.minutes() - start.minutes()
@@ -107,11 +115,13 @@ class WorkBookWriter:
             row += 1
 
         last_row = row
+        shift = len(groups) + 4
 
         row = cls.first_row
         col = cls.FIRST_COLUMN + 1
         for g in groups:
             cls.worksheet.write(row, col, g, cls.format_group)
+            cls.worksheet.write(row, col + shift, g, cls.format_group)
             col += 1
 
         last_col = col
@@ -123,8 +133,10 @@ class WorkBookWriter:
             content = '{:s}\n{:s}\n{:s}'.format(cl, teacher, room)
             if r1 == r2:
                 cls.worksheet.write(r1, col, content, cls.teacher_to_format[teacher])
+                cls.worksheet.write(r1, col + shift, content, cls.room_to_format[room])
             else:
                 cls.worksheet.merge_range(r1, col, r2, col, content, cls.teacher_to_format[teacher])
+                cls.worksheet.merge_range(r1, col + shift, r2, col + shift, content, cls.room_to_format[room])
             if r2 > last_row:
                 last_row = r2
 

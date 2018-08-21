@@ -10,6 +10,7 @@ import xls
 # constants
 
 LUNCH_CLASS = "Lunch"
+LUNCH_TEACHER = "Lunch"
 LUNCH_TIME_FRAME = "LunchWindow"
 
 def is_room(x):
@@ -67,13 +68,15 @@ class Attribute:
         self.name = fields[0]
         self.add(fields[1:])
         #self.show()
+
     def show(self):
-        print self.attr_name, self.name
+        Log.d("---- {:s} {:s} ".format(self.attr_name, self.name))
         for gn in self.group_class.keys():
-            print "\t", gn, ": ", self.group_class[gn]
+            Log.d("{:10s}: {:s}".format(gn, str(self.group_class[gn])))
 
     def __str__(self):
         return self.name
+
     def add(self, fields):
         class_names = filter_from_dict(fields, G.classlist)
         group_names = filter_from_dict(fields, G.grouplist)
@@ -151,8 +154,8 @@ class Sched_option_item:
     teacher_names = None
     nr = 0
     nt = 0
-    sel_teacher = 0
-    sel_room = 0
+    sel_teacher = -1
+    sel_room = -1
     is_ok = " "
     def __init__(self, cl_name, room_names, teacher_names, tstart, tend):
         self.class_name = cl_name
@@ -180,24 +183,34 @@ class Sched_option_item:
         r_str = LU.list2str(self.room_names)
         return '{:s} {:10s} {:s}-{:s} [{:s}] [{:s}]'.format(self.is_ok, \
                 self.class_name, self.tstart, self.tend, r_str, t_str)
+
     def rewind_teacher(self):
-        self.sel_teacher = 0
+        self.sel_teacher = -1
+
     def next_teacher(self):
         if self.sel_teacher < (self.nt - 1):
             self.sel_teacher += 1
             return True
         return False
+
     def rewind_room(self):
-        self.sel_room = 0
+        self.sel_room = -1
+
     def next_room(self):
         if self.sel_room < (self.nr - 1):
             self.sel_room += 1
             return True
         return False
+
     def selected_teacher(self):
-        return self.teacher_names[self.sel_teacher]
+        if self.sel_teacher in range(len(self.teacher_names)):
+            return self.teacher_names[self.sel_teacher]
+        return None
+
     def selected_room(self):
-        return self.room_names[self.sel_room]
+        if self.sel_room in range(len(self.room_names)):
+            return self.room_names[self.sel_room]
+        return None
 #-
 
 class Sched:
@@ -255,6 +268,7 @@ class Group:
     current_option = 0
     schedule = None
     has_lunch = False
+    curr_order_valid = False
 
     def __init__(self, fields):
         self.name = fields[1]
@@ -325,18 +339,18 @@ class Group:
         Log.v(self.name, "option order", self.current_option, order)
 
         t = self.start
-
+        self.curr_order_valid = True
         for k in order:
             cl = self.classes[k]
             if self.has_lunch and (cl.name == LUNCH_CLASS):
                 if t < self.lunch_earlyest_time or t > self.lunch_latest_time:
-                    # Lunch starts not in lunch time window
-                    return False
+                    Log.v('Lunch position ivalid in order {:d}'.format(self.current_option))
+                    self.curr_order_valid = False
             item = Sched_option_item(cl.name, self.class_room_options[cl.name], \
                     self.class_teacher_options[cl.name], t, t.add(cl.duration))
             t = t.add(cl.duration)
             self.schedule.append(item)
-        return True
+        return self.curr_order_valid
 
     def gen_option_no(self, n):
         if n < self.num_scheds:
@@ -354,10 +368,14 @@ class Group:
         return False
 
     def gen_next_option(self):
+        Log.v('gen_next_option: Looking for next order for {:s}, current order {:s}'.\
+                format(self.name, self.current_option))
         n = self.current_option + 1
         while n < self.num_scheds:
             ret = self.gen_option_no(n)
             if ret:
+                Log.v('gen_next_option: found order {:s}'.\
+                    format(self.current_option))
                 return True
             n += 1
         return False
@@ -389,23 +407,78 @@ class Group:
     def opt_range(self):
         return self.num_scheds
 
-    def set_nok(cls):
-        for item in cls.schedule:
-            item.nok()
+    def next_sched(cls, busy_cal):
+        busy_cal.remove_group(cls.name)
+        # (0)
+        while True:
+            Log.v('Group {:s}: trying to allocate resources for order {:d} valid {:d}'.\
+                    format(cls.name, cls.current_option, cls.curr_order_valid))
+            if not cls.curr_order_valid:
+                Log.e('Current option is invalid - this should never happen!!!')
+                return False
 
-    def next_teacher(self):
-        for item in self.schedule:
-            if item.next_teacher():
-                break
-            else:
-                item.rewind_teacher()
-    def next_room(self):
-        for item in self.schedule:
-            if item.next_room():
-                break
-            else:
+            # (1) try classes in current order
+            for item_pos in range(len(cls.schedule)):
+                item = cls.schedule[item_pos]
+                room = item.selected_room()
+                teacher = item.selected_teacher()
+
+                Log.v('Try to chage room or teacher: {:s}'.format(str(item)))
+                # (3)
+                while True:
+                    ret = item.next_room()
+                    if not ret:
+                        Log.v("No more rooms available for class", str(item))
+                        break;
+
+                    room = item.selected_room()
+                    ret = busy_cal.applicable(item.tstart, item.tend, room, cls.name)
+                    if ret:
+                        Log.v('new room {:s} found for {:s}'.format(room, str(item)))
+                        break
+                    Log.v('room {:s} busy, try next'.format(room))
+                # (3) end
+                if ret and teacher:
+                    break
+
+                # (4) Try if teacher can be added or is busy during this class time
+                while True:
+                    ret = item.next_teacher()
+                    if not ret:
+                        Log.v("No more teachers available for class", str(item))
+                        break
+
+                    teacher = item.selected_teacher()
+                    ret = busy_cal.applicable(item.tstart, item.tend, teacher, cls.name)
+                    if ret:
+                        Log.v('new teacher {:s} found for {:s}'.format(teacher, str(item)))
+                        break
+                    Log.v('teacher {:s} busy, try next'.format(teacher))
+                # (4) end
+                if not ret:
+                    Log.v("Failed to select new room/teacher for {:s}, see busy calendar".format(str(item)))
+                    busy_cal.show()
+                    break
+            # (1) end
+            if ret:
+                Log.v('{:s}: order {:d} added'.format(cls.name, cls.current_option))
+                for item in cls.schedule:
+                    busy_cal.commit(cls.name, item.tstart, item.tend, \
+                            [item.selected_room(), item.selected_teacher()])
+                busy_cal.show()
+                return True
+
+            Log.v('{:s}: Failed to add current order {:d}'.format(cls.name, cls.current_option))
+            ret = cls.gen_next_option_move_bad(item_pos)
+            if not ret:
+                Log.v("No more order options for ", cls.name)
+                return False
+            Log.v('Try next classes order {:d} options for {:s}'.format(cls.current_option, cls.name))
+            for item in cls.schedule:
                 item.rewind_room()
-#-
+                item.rewind_teacher()
+        # (0) end
+#}
 
 class BusyCalendar:
     cal = None
@@ -416,7 +489,7 @@ class BusyCalendar:
         self.cal = {}
         self.temp = {}
 
-    def try_add(self, startT, endT, key, group):
+    def applicable(self, startT, endT, key, group):
         if key in self.ignore_list:
             return True
         for grp in self.cal.keys():
@@ -424,11 +497,6 @@ class BusyCalendar:
             ret = self.__check_calendar(startT, endT, key, calendar)
             if not ret:
                 return False
-
-        if key not in self.temp.keys():
-            self.temp[key] = []
-        start_min, end_min = [startT.minutes(), endT.minutes()]
-        self.temp[key].append([start_min, end_min])
         return True
 
     def __check_calendar(self, startT, endT, key, calendar):
@@ -438,42 +506,35 @@ class BusyCalendar:
             for item in busy:
                 start, end = item
                 if not (end_min <= start or start_min >= end):
-                    print "Calendar conflict: {:s} {:s}-{:s} <> {:s}-{:s}".format(key, minutes2Time(start), minutes2Time(end), startT, endT)
+                    Log.v("Calendar conflict: {:s} {:s}-{:s} <> {:s}-{:s}".format \
+                            (key, minutes2Time(start), minutes2Time(end), startT, endT))
                     return False
         return True
 
-    def commit(self, group):
+    def commit(self, group, startT, endT, keys):
         if group not in self.cal.keys():
             self.cal[group] = {}
         calendar = self.cal[group]
 
-        for key in self.temp.keys():
-            if not key in calendar.keys():
+        start_min, end_min = [startT.minutes(), endT.minutes()]
+        for key in keys:
+            if key not in calendar.keys():
                 calendar[key] = []
-            for val in self.temp[key]:
-                calendar[key].append(val)
-        self.temp = {}
-
-    def drop(self):
-        self.temp = {}
+            calendar[key].append([start_min, end_min])
 
     def remove_group(cls, group):
         if group in cls.cal.keys():
             del cls.cal[group]
 
     def show(self):
-        print "BusyCalendar"
+        Log.d("BusyCalendar")
         for grp in self.cal.keys():
             calendar = self.cal[grp]
             for key in calendar.keys():
                 busy = calendar[key]
                 for times in busy:
-                    print '\t{:10s} {:10s} {:s}-{:s}'.format(grp, key, minutes2Time(times[0]), minutes2Time(times[1]))
-        print "--temp:"
-        for key in self.temp.keys():
-            busy = self.temp[key]
-            for times in busy:
-                print '\t{:10s} {:10s} {:s}-{:s}'.format('temp', key, minutes2Time(times[0]), minutes2Time(times[1]))
+                    Log.d(' - {:10s} {:10s} {:s}-{:s}'.format(grp, \
+                            key, minutes2Time(times[0]), minutes2Time(times[1])))
 #}
 
 class CommonSched:
@@ -495,90 +556,41 @@ class CommonSched:
         Log.d('Added {:s} with {:d} options, total {:d} options\n'.format(grp.name, \
                 n_options, self.n_options))
 
-    def adjust(self, debug=False, verbose=False):
-        ret = False
-        # (0) iterate over groups
-        for grp in self.g_items:
-            grp.set_nok()
-            self.busy_cal.remove_group(grp.name)
-            # (1) try group order options
-            while True:
+    def adjust(self, max_num=-1, sched_save_cb=None):
+        groups_num = len(self.g_items)
+        current_gno = 0
 
-                if Log.verbose():
-                    sys.stderr.write("Trying classes order, group {:s}\n".format(grp.name))
-                    for item in grp.schedule:
-                        sys.stderr.write(item.show_selection() + '\n')
-                    sys.stderr.write("\n")
+        while True:
+            grp = self.g_items[current_gno]
+            Log.v("Trying to add {:s} to the schedule".format(grp.name))
+            ret = grp.next_sched(self.busy_cal)
+            if ret:
+                if current_gno < groups_num - 1:
+                    Log.v("Moving to the next group")
+                    current_gno += 1
+                    self.g_items[current_gno].set_first_option()
+                    continue
 
-                # (2) try add classes one-by-one
-                item_pos = 0
-                for item in grp.schedule:
-                    # (3) Try if room can be added or is busy during this class time
-                    item.rewind_room()
-                    while True:
-                        room = item.selected_room()
-                        ret = self.busy_cal.try_add(item.tstart, item.tend, room, grp.name)
-                        if ret:
-                            Log.v("Room found for group", grp.name, str(item), "selected", str(room))
-                            break
+                Log.v("Last group added, saving schedule")
+                if sched_save_cb:
+                    sched_save_cb(self.current_sched_as_list())
+                    if max_num > 0:
+                        max_num -= 1
+                        if max_num == 0:
+                            return
 
-                        Log.v("Room busy:", str(room))
-                        ret = item.next_room()
-                        if not ret:
-                            Log.d("No room available for class", str(item))
-                            break
-                    # (3) end if room can be added or is busy during thos class time
-                    if not ret:
-                        Log.v("Completely failed adding class (no room):", grp.name, str(item))
-                        break
+                Log.v("Try find more for same group")
+                continue
+            else:
+                if current_gno > 0:
+                    Log.v("Moving to the previous group")
+                    current_gno -= 1
+                    continue
 
-                    # (4) Try if techer can be added or is busy during this class time
-                    item.rewind_teacher()
-                    while True:
-                        teacher = item.selected_teacher()
-                        ret = self.busy_cal.try_add(item.tstart, item.tend, teacher, grp.name)
-                        if ret:
-                            Log.v("Teacher found for group", grp.name, str(item), "selected", str(teacher))
-                            break
-
-                        Log.v("Teacher busy", str(teacher))
-                        ret = item.next_teacher()
-                        if not ret:
-                            Log.v("No teacher available for class", str(item))
-                            break
-
-                    # (4) end if techer can be added or is busy during thos class time
-                    if not ret:
-                        Log.v("Completely failed adding class (no teacher):", grp.name, str(item))
-                        break
-                    item.ok()
-                    # will try adding next class in this schedule
-                    item_pos += 1
-                # (2) end try add classes one-by-one
-                if not ret:
-                    self.busy_cal.drop()
-                    ret = grp.gen_next_option_move_bad(item_pos)
-                    #ret = grp.gen_next_option()
-                    if not ret:
-                        Log.v("No more classes order options for ", grp.name)
-                        break
-                    Log.v("Try next classes order options for ", grp.name)
-                else:
-                    # store busy calendar
-                    self.busy_cal.commit(grp.name)
-                    Log.d("Success! Gropup added ", grp.name)
-                    if Log.verbose():
-                        for item in grp.schedule:
-                            print item.show_selection()
-                        self.busy_cal.show()
-                    break
-            # (1) end group order options
-            if not ret:
-                Log.v("Completely failed adding group:", grp.name)
+                Log.i("Seems nothing more to try, finishing")
                 break
-        # (0) end iterate over groups
-        return ret
-
+            # end if
+        # end while
 
     def move_for_next_adjustment(cls):
         for grp in reversed(cls.g_items):
@@ -606,8 +618,97 @@ class CommonSched:
 
 #}
 
+class TeacherStat:
+    idle_max_pct = 0
+    room_chg_max = 0
+    classes_num_max = 0
+    classes_num_min = 1000
+    busy_min = 10000
+    busy_max = 0
+    n_teachers = 0
+    n_classes = 0
+    classes_time = 0
 
-##########################################
+    def __str__(cls):
+        return 'idle {:f} rchg {:d} cnum {:d}-{:d} busy {:d}-{:d} t {:d} cl {:d} time {:d} rate {:.3f}'. \
+        format(cls.idle_max_pct, cls.room_chg_max, cls.classes_num_min, cls.classes_num_max, \
+        cls.busy_min, cls.busy_max, cls.n_teachers, cls.n_classes, cls.classes_time, \
+        cls.get_penalty_rate())
+
+    def __pct(self, a, b):
+        return a * 100 / b
+
+    def get_penalty_rate(cls):
+        pen = cls.idle_max_pct * 2 + cls.__pct(cls.room_chg_max, cls.n_classes) + \
+                cls.__pct(cls.classes_num_max - cls.classes_num_min, cls.n_classes / cls.n_teachers) + \
+                cls.__pct(cls.busy_max - cls.busy_min, cls.classes_time / cls.n_teachers)
+        return pen
+#-
+
+def stat_schedule(items):
+    FIRST_MINUTE = 0
+    LAST_MINUTE = 23 * 60 + 59
+    teacher_stat = {}
+    teachers = []
+    num_classes = 0
+    classes_time = 0
+    for it in items:
+        group, cl, start, stop, room, teacher = it.split()
+
+        if teacher == LUNCH_TEACHER:
+            continue
+
+        start = LU.str_time(start)
+        stop = LU.str_time(stop)
+
+        num_classes += 1
+        if teacher not in teachers:
+            teachers.append(teacher)
+
+        if teacher not in teacher_stat.keys():
+            # started, ended, busy, classes, room_changes, last_room, last_class
+            teacher_stat[teacher] = {'start': LAST_MINUTE, 'end': FIRST_MINUTE, \
+                    'busy': 0, 'classes': 0, 'rchg': 0, 'clchg': 0, \
+                    'lr': 'n/a', 'lc': 'n/a'}
+        busy = stop.minutes() - start.minutes()
+        classes_time += busy
+        ts = teacher_stat[teacher]
+        if start.minutes() < ts['start']:
+            ts['start'] = start.minutes()
+        if stop.minutes() > ts['end']:
+            ts['end'] = stop.minutes()
+        ts['classes'] += 1
+        ts['busy'] += busy
+        if ts['lr'] != room:
+            ts['lr'] = room
+            ts['rchg'] += 1
+        if ts['lc'] != cl:
+            ts['lc'] = cl
+            ts['clchg'] += 1
+        teacher_stat[teacher] = ts
+
+    ts = TeacherStat()
+    ts.n_teachers = len(teachers)
+    ts.n_classes = num_classes
+    ts.classes_time = classes_time
+
+    for teacher in teacher_stat.keys():
+        t = teacher_stat[teacher]
+        idle = (t['end'] - t['start'] - t['busy']) * 100 / t['busy']
+        if idle > ts.idle_max_pct:
+            ts.idle_max_pct = idle
+        if t['rchg'] > ts.room_chg_max:
+            ts.room_chg_max = t['rchg']
+        if t['clchg'] > ts.classes_num_max:
+            ts.classes_num_max = t['clchg']
+        if t['clchg'] < ts.classes_num_min:
+            ts.classes_num_min = t['clchg']
+        if t['busy'] < ts.busy_min:
+            ts.busy_min = t['busy']
+        if t['busy'] > ts.busy_max:
+            ts.busy_max = t['busy']
+    return ts
+#-
 
 def name_exist_in(records, rn):
     for r in records:
@@ -652,16 +753,19 @@ def get_input(f):
 
         if fields[0] == '#rooms':
             G.roomlist = fields[1:]
-            LU.print_list("Rooms:", G.roomlist, "\t")
+            Log.d("Rooms:", str(G.roomlist))
+
         if fields[0] == '#teachers':
             G.teacherlist = fields[1:]
-            LU.print_list("Teachers:", G.teacherlist, "\t")
+            Log.d("Teachers:", str(G.teacherlist))
+
         if fields[0] == '#classes':
             G.classlist = fields[1:]
-            LU.print_list("Classes:", G.classlist, "\t")
+            Log.d("Classes:", str(G.classlist))
+
         if fields[0] == '#groups':
             G.grouplist = fields[1:]
-            LU.print_list("Groups:", G.grouplist, "\t")
+            Log.d("Groups:", str(G.grouplist))
 #}
 
 
@@ -674,10 +778,41 @@ class Global:
     teacherlist = []
     classlist = []
     grouplist = []
+    work_book = None
+    n_scheds_found = 0
+    scheds_to_save = None
+    best_scheds = {}
+    best_collected = 0
+    best_max = 10
 
-G = Global()
+    def __init__(self, wb_name="sched.xlsx"):
+        self.work_book = xls.WorkBookWriter(wb_name)
+        self.scheds_to_save = []
 
-Log = log.Debug(log.VERBOSE, "stdout")
+    def save_workbook(cls):
+        cls.work_book.save()
+
+G = Global("sched.xlsx")
+Log = log.Debug(log.INFO, "stdout")
+
+def save_scheduler(items):
+
+    G.n_scheds_found += 1
+    ts = stat_schedule(items)
+    pen = ts.get_penalty_rate()
+
+    if len(G.best_scheds.keys()) < G.best_max:
+        G.best_scheds[pen] = items
+    else:
+        rates = sorted(G.best_scheds.keys(), reverse=True)
+        if pen < rates[0]:
+            Log.i('rates {:f} - {:f}'.format(rates[0], rates[G.best_max-1]))
+            print rates
+            Log.i('replacing {:f} with {:f}'.format(rates[0], pen))
+            del G.best_scheds[rates[0]]
+            G.best_scheds[pen] = items
+            print sorted(G.best_scheds.keys(), reverse=True)
+            print "-"
 
 def main():
 
@@ -686,30 +821,25 @@ def main():
     Show_Roms()
     Show_Teachers()
 
-
-    work_book = xls.WorkBookWriter("sched.xlsx")
-
     CS = CommonSched()
     for grp in G.groups:
         CS.add_group(grp)
-    ret = CS.adjust()
 
-    if ret:
-        print "1 ---"
-        CS.show_last()
-        sch = CS.current_sched_as_list()
-        work_book.export(sch)
+    G.best_max = 10
 
-        ret = CS.move_for_next_adjustment()
-        ret = CS.adjust()
-    if ret:
-        print "2 ---"
-        CS.show_last()
-        sch = CS.current_sched_as_list()
-        work_book.export(sch)
+    Log.i("Starting big work");
+    CS.adjust(100000, save_scheduler)
+    Log.i('Done, {:d} generated'.format(G.n_scheds_found))
 
-    work_book.save()
 
+    for rate in sorted(G.best_scheds.keys()):
+        Log.i('Schedule rate {:.3f}'.format(rate))
+        items = G.best_scheds[rate]
+        for it in items:
+            Log.i(str(it))
+        G.work_book.export(items)
+
+    G.save_workbook()
 
 main()
 sys.exit()
