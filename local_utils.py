@@ -105,7 +105,7 @@ class ProgressBarExtended:
         self.bar_len = bar_len
         self.started = time.clock()
         self.prefix = prefix
-    def show(self, counts):
+    def show(self, counts, total_count):
         out = self.prefix
         for n in range(self.cnt):
             count = counts[n] + 1
@@ -116,7 +116,7 @@ class ProgressBarExtended:
             outs = '[{:s}]{:6.2f}%'.format(bar, percents);
             out = '{:s} {:s}'.format(out, outs)
 
-        out = '{:s} {:d} seconds\r'.format(out, int(time.clock() - self.started))
+        out = '{:s} {:d} seconds {:d} found\r'.format(out, int(time.clock() - self.started), total_count)
         sys.stderr.write(out)
         sys.stderr.flush()
     def done(self):

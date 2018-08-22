@@ -131,12 +131,12 @@ def getAttributes(attrs, cl, grp):
     ret = []
     for r in attrs:
         if r.dedicated(grp.name, cl.name):
-            ret.append(r)
+            ret.append(r.name)
     if len(ret):
         return ret
     for r in attrs:
         if r.matches(grp.name, cl.name):
-            ret.append(r)
+            ret.append(r.name)
     return ret
 #-
 
@@ -172,9 +172,6 @@ class Sched_option_item:
         self.is_ok = "*"
     def nok(self):
         self.is_ok = " "
-    def make_copy(self):
-        return Sched_option_item(self.class_name, self.room_names, self.teacher_names, \
-                self.tstart, self.tend)
     def show_selection(self):
         if self.sel_teacher >= 0:
             t_str = self.teacher_names[self.sel_teacher]
@@ -466,6 +463,7 @@ class Group:
                 if not ret:
                     if jocker_in_use:
                         item.rewind_room() # this wil set selection to -1
+                        Log.v("Jocker room assigned to {:s}".format(str(item)))
                         ret = True
                     else:
                         cls.failure_reason = [item.class_name, 'room']
@@ -491,6 +489,7 @@ class Group:
                 # (4) end
                 if (not ret) and jocker_in_use:
                     item.rewind_teacher() # this wil set selection to -1
+                    Log.v("Jocker teacher assigned to {:s}".format(str(item)))
                     ret = True
                 if not ret:
                     cls.failure_reason = [item.class_name, 'teacher']
@@ -536,6 +535,7 @@ class BusyCalendar:
         self.ignore_list = ignore
         self.cal = {}
         self.temp = {}
+        Log.v('BusyCalendar ignore_list {:s}'.format(str(self.ignore_list)))
 
     def applicable(self, startT, endT, key, group):
         if key in self.ignore_list:
@@ -639,11 +639,11 @@ class CommonSched:
         with_jocker = True
 
         totals = [grp.num_scheds for grp in self.g_items]
-        pb = LU.ProgressBarExtended(totals, 20, 'progress')
+        pb = LU.ProgressBarExtended(totals, 10, 'progress')
 
         while True:
             progress = [grp.current_option for grp in self.g_items]
-            #pb.show(progress)
+            if G.use_progress_bar: pb.show(progress, G.n_scheds_found)
 
             grp = self.g_items[current_gno]
             Log.v("Trying to add {:s} to the schedule".format(grp.name))
@@ -908,7 +908,7 @@ def main():
 
     Log.i("Starting big work")
     Log.flush()
-    CS.adjust(100, save_scheduler, use_jocker=True)
+    CS.adjust(500, save_scheduler, use_jocker=True)
     Log.i('Done, {:d} generated'.format(G.n_scheds_found))
 
     G.best_scheds.sort(key=lambda x: x[0])
@@ -936,6 +936,7 @@ class Global:
     best_scheds = []
     best_collected = 0
     best_max = 10
+    use_progress_bar = False
 
     def __init__(self, wb_name="sched.xlsx"):
         self.work_book = xls.WorkBookWriter(wb_name)
@@ -945,7 +946,8 @@ class Global:
         cls.work_book.save()
 
 G = Global("sched.xlsx")
-Log = log.Debug(log.VERBOSE, "stdout")
+G.use_progress_bar = True
+Log = log.Debug(log.ERROR, "stdout")
 
 main()
 sys.exit()
