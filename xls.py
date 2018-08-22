@@ -5,7 +5,7 @@ class CellColors:
     tbl = None
     size = 0
     idx = 0
-    special_colors = {"Universe": "red", "Jocker": "red"}
+    special_colors = {"Universe": "white", "Jocker": "white"}
     def __init__(self):
         self.tbl = ["#00CCFF", "#CCFFFF", "#CCFFCC", "#FFFF99", \
             "#99CCFF", "#FF99CC", "#CC99FF", "#FFCC99", "#3366FF", \

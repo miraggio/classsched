@@ -10,10 +10,10 @@
 ##room 515-B
 #room 201-A1  English Science Video Humanities EnglishKids WhoIsWho Animals Chess Games
 #room 201-A2  Science MentalMath Art
-#room 201-A3  Video Science
+#room 201-A3  Video Science Chess
 #room 201-A4  Art Anime Science
 #room Canteen Lunch
-#room Universe Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Anime MentalMath
+##room Universe Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Anime MentalMath
 #
 #teacher Ekaterina  Games English EnglishKids
 #teacher Mary       Video EnglishKids Science Humanities
@@ -24,12 +24,13 @@
 #teacher Alesia     Art Anime
 #teacher Vladlen    Chess
 #teacher LunchTeacher  Lunch
-#teacher Jocker     Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Anime MentalMath
+##teacher Jocker     Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Anime MentalMath
 #
 #group K3-4A     9:00   Humanities:80 Chess:40
 #group K5-6A     9:00   Video:60 Science:30 Anime:30 Games:30 Art:40 Chess:30 Lunch:20:11:00:13:00
 #group K7-8A     9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
 #group K7-8C     9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
+#group K7-8C     9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
 #group K9-10C    9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
-#group T11-12A   9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
-#group T11-12B   9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
+##group T11-12A   9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00
+##group T11-12B   9:00   Video:50 Science:30 Anime:30 Chess:30 Games:30 Art:40 Lunch:20:11:00:13:00

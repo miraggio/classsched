@@ -93,6 +93,35 @@ class ProgressBar:
     def done(self):
         sys.stderr.write("\n")
 
+class ProgressBarExtended:
+    totals = None
+    bar_len = 100
+    started = 0
+    prefix = ""
+    cnt = 0
+    def __init__(self, totals, bar_len, prefix):
+        self.totals = totals
+        self.cnt = len(totals)
+        self.bar_len = bar_len
+        self.started = time.clock()
+        self.prefix = prefix
+    def show(self, counts):
+        out = self.prefix
+        for n in range(self.cnt):
+            count = counts[n] + 1
+            total = self.totals[n]
+            filled_len = int(round(self.bar_len * count / float(total)))
+            percents = round(100.0 * count / float(total), 1)
+            bar = '=' * filled_len + '-' * (self.bar_len - filled_len)
+            outs = '[{:s}]{:6.2f}%'.format(bar, percents);
+            out = '{:s} {:s}'.format(out, outs)
+
+        out = '{:s} {:d} seconds\r'.format(out, int(time.clock() - self.started))
+        sys.stderr.write(out)
+        sys.stderr.flush()
+    def done(self):
+        sys.stderr.write("\n")
+
 
 class Time:
     h = 9

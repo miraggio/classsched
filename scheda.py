@@ -176,8 +176,14 @@ class Sched_option_item:
         return Sched_option_item(self.class_name, self.room_names, self.teacher_names, \
                 self.tstart, self.tend)
     def show_selection(self):
-        t_str = self.teacher_names[self.sel_teacher]
-        r_str = self.room_names[self.sel_room]
+        if self.sel_teacher >= 0:
+            t_str = self.teacher_names[self.sel_teacher]
+        else:
+            t_str = JOCKER
+        if self.sel_room >= 0:
+            r_str = self.room_names[self.sel_room]
+        else:
+            r_str = UNIVERSE
         return '{:s} {:10s} {:s} {:s} {:s} {:s}'.format(self.is_ok, \
                 self.class_name, self.tstart, self.tend, r_str, t_str)
     def __str__(self):
@@ -271,6 +277,8 @@ class Group:
     schedule = None
     has_lunch = False
     curr_order_valid = False
+    failure_reason = None
+    first_valid_option_no = -1
 
     def __init__(self, fields):
         self.name = fields[1]
@@ -301,6 +309,7 @@ class Group:
         self.class_teacher_options = class_teacher_options
 
         self.gen_permutations()
+        self.set_first_option()
 
     def __setup_lunch(cls, fields):
         for x in fields:
@@ -337,7 +346,6 @@ class Group:
         self.schedule = []
         size = len(self.classes)
         order = G.permuts[size][self.current_option]
-        Log.v(self.name, "option order", self.current_option, order)
 
         t = self.start
         self.curr_order_valid = True
@@ -351,6 +359,15 @@ class Group:
                     self.class_teacher_options[cl.name], t, t.add(cl.duration))
             t = t.add(cl.duration)
             self.schedule.append(item)
+
+        if self.curr_order_valid:
+            for item in self.schedule:
+                item.rewind_room()
+                item.rewind_teacher()
+
+        Log.v('gen order for {:s}: [{:d}]={:s} valid {:d}'.format \
+                (self.name, self.current_option, order,self.curr_order_valid))
+
         return self.curr_order_valid
 
     def gen_option_no(self, n):
@@ -364,6 +381,7 @@ class Group:
         while n < self.num_scheds:
             ret = self.gen_option_no(n)
             if ret:
+                self.first_valid_option_no = n
                 return True
             n += 1
         return False
@@ -408,8 +426,13 @@ class Group:
     def opt_range(self):
         return self.num_scheds
 
-    def next_sched(cls, busy_cal):
+    def next_sched(cls, busy_cal, use_jocker=False):
         busy_cal.remove_group(cls.name)
+        jocker_in_use = False
+
+        moving_fwd = cls.current_option == cls.first_valid_option_no
+        if moving_fwd:
+            order_rates = []
         # (0)
         while True:
             Log.v('Group {:s}: trying to allocate resources for order {:d} valid {:d}'.\
@@ -430,6 +453,7 @@ class Group:
                     ret = item.next_room()
                     if not ret:
                         Log.v("No more rooms available for class", str(item))
+                        room = None
                         break;
 
                     room = item.selected_room()
@@ -439,7 +463,15 @@ class Group:
                         break
                     Log.v('room {:s} busy, try next'.format(room))
                 # (3) end
-                if ret and teacher:
+                if not ret:
+                    if jocker_in_use:
+                        item.rewind_room() # this wil set selection to -1
+                        ret = True
+                    else:
+                        cls.failure_reason = [item.class_name, 'room']
+                        break
+                elif teacher:
+                    Log.v('new room found and there is old teacher {:s}'.format(teacher))
                     break
 
                 # (4) Try if teacher can be added or is busy during this class time
@@ -447,6 +479,7 @@ class Group:
                     ret = item.next_teacher()
                     if not ret:
                         Log.v("No more teachers available for class", str(item))
+                        teacher = None
                         break
 
                     teacher = item.selected_teacher()
@@ -456,9 +489,12 @@ class Group:
                         break
                     Log.v('teacher {:s} busy, try next'.format(teacher))
                 # (4) end
+                if (not ret) and jocker_in_use:
+                    item.rewind_teacher() # this wil set selection to -1
+                    ret = True
                 if not ret:
+                    cls.failure_reason = [item.class_name, 'teacher']
                     Log.v("Failed to select new room/teacher for {:s}, see busy calendar".format(str(item)))
-                    busy_cal.show()
                     break
             # (1) end
             if ret:
@@ -466,18 +502,29 @@ class Group:
                 for item in cls.schedule:
                     busy_cal.commit(cls.name, item.tstart, item.tend, \
                             [item.selected_room(), item.selected_teacher()])
-                busy_cal.show()
                 return True
 
-            Log.v('{:s}: Failed to add current order {:d}'.format(cls.name, cls.current_option))
+            Log.v("{:s}: failed to select new {:s} for {:s} order no {:d}, see busy calendar".format \
+                    (cls.name, cls.failure_reason[1], str(item), cls.current_option))
+            busy_cal.show()
+
+            if jocker_in_use:
+                Log.v("No more order options for {:s} even with jockers".format(cls.name))
+                return False
+
+            if moving_fwd:
+                order_rates.append([cls.current_option, item_pos])
+
             ret = cls.gen_next_option_move_bad(item_pos)
             if not ret:
                 Log.v("No more order options for ", cls.name)
-                return False
+                if not (use_jocker and moving_fwd):
+                    return False
+                jocker_in_use = True
+                order_n, jocker_item_pos = sorted(order_rates, reverse=True, key=lambda a: a[1])[0]
+                Log.i("{:s}: try  jockers on option no {:d} statisfied items num {:d}".format(cls.name, order_n, jocker_item_pos))
+                cls.gen_option_no(order_n)
             Log.v('Try next classes order {:d} options for {:s}'.format(cls.current_option, cls.name))
-            for item in cls.schedule:
-                item.rewind_room()
-                item.rewind_teacher()
         # (0) end
 #}
 
@@ -538,13 +585,42 @@ class BusyCalendar:
                             key, minutes2Time(times[0]), minutes2Time(times[1])))
 #}
 
+class SearchPath:
+    failure_paths = None
+    success_path_len = -1
+
+    def __init__(self):
+        self.failure_paths = []
+    def add_failed_path(self, groups, failed_gno):
+
+        if failed_gno < self.success_path_len:
+            return
+
+        if failed_gno > 0:
+            path = [grp.get_current_option_no() for grp in groups[0:failed_gno-1]]
+        else:
+            path = []
+        failure = groups[failed_gno].failure_reason
+
+        if failed_gno == self.success_path_len:
+            self.failure_paths.append([path, failure])
+            Log.i("Appended failed path {:s} failure {:s}, {:d} total".format(str(path), str(failure), len(self.failure_paths)))
+        else:
+            self.failure_paths = [[path, failure]]
+            self.success_path_len = failed_gno
+            Log.i("Updated failed path {:s}".format(str(path), str(failure)))
+
 class CommonSched:
     g_items = None #list of groups
     busy_cal = None #busy calendar both teachers and rooms
     n_options = 1
+    longest_patterns = None
+    search_paths = SearchPath()
+
     def __init__(self):
         self.g_items = []
         self.busy_cal = BusyCalendar([LUNCH_TEACHER, LUNCH_ROOM, JOCKER, UNIVERSE])
+        longest_patterns = {'group': 'n/a', 'depth': 0, 'paths': [], 'failures': []}
 
     def add_group(self, grp):
         grp.set_first_option()
@@ -557,19 +633,28 @@ class CommonSched:
         Log.d('Added {:s} with {:d} options, total {:d} options\n'.format(grp.name, \
                 n_options, self.n_options))
 
-    def adjust(self, max_num=-1, sched_save_cb=None):
+    def adjust(self, max_num=-1, sched_save_cb=None, use_jocker=False):
         groups_num = len(self.g_items)
         current_gno = 0
+        with_jocker = True
+
+        totals = [grp.num_scheds for grp in self.g_items]
+        pb = LU.ProgressBarExtended(totals, 20, 'progress')
 
         while True:
+            progress = [grp.current_option for grp in self.g_items]
+            #pb.show(progress)
+
             grp = self.g_items[current_gno]
             Log.v("Trying to add {:s} to the schedule".format(grp.name))
-            ret = grp.next_sched(self.busy_cal)
+            ret = grp.next_sched(self.busy_cal, with_jocker)
+
             if ret:
                 if current_gno < groups_num - 1:
                     Log.v("Moving to the next group")
                     current_gno += 1
                     self.g_items[current_gno].set_first_option()
+                    with_jocker = use_jocker
                     continue
 
                 Log.v("Last group added, saving schedule")
@@ -619,7 +704,7 @@ class CommonSched:
 
 #}
 
-class TeacherStat:
+class SchedStat:
     idle_max_pct = 0
     room_chg_max = 0
     classes_num_max = 0
@@ -699,7 +784,7 @@ def stat_schedule(items):
             ts['clchg'] += 1
         teacher_stat[teacher] = ts
 
-    ts = TeacherStat()
+    ts = SchedStat()
     ts.n_teachers = len(teachers)
     ts.n_classes = num_classes
     ts.classes_time = classes_time
@@ -790,7 +875,7 @@ def save_scheduler(items):
     pen = ts.get_penalty_rate()
     last = G.best_max - 1
 
-    Log.i('New schedule, rate {:f} total {:d}'.format(pen, G.n_scheds_found))
+    Log.d('New schedule, rate {:f} total {:d}'.format(pen, G.n_scheds_found))
     Log.flush()
     if len(G.best_scheds) < G.best_max:
         G.best_scheds.append([pen, items])
@@ -806,6 +891,7 @@ def save_scheduler(items):
             G.best_scheds.sort(key=lambda x: x[0])
             Log.v(str(list(map(lambda x: x[0], G.best_scheds))))
             Log.v("-------")
+            Log.flush()
 
 def main():
 
@@ -820,8 +906,9 @@ def main():
 
     G.best_max = 10
 
-    Log.i("Starting big work");
-    CS.adjust(1000, save_scheduler)
+    Log.i("Starting big work")
+    Log.flush()
+    CS.adjust(100, save_scheduler, use_jocker=True)
     Log.i('Done, {:d} generated'.format(G.n_scheds_found))
 
     G.best_scheds.sort(key=lambda x: x[0])
@@ -858,7 +945,7 @@ class Global:
         cls.work_book.save()
 
 G = Global("sched.xlsx")
-Log = log.Debug(log.INFO, "stdout")
+Log = log.Debug(log.VERBOSE, "stdout")
 
 main()
 sys.exit()
