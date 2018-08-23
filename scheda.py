@@ -350,7 +350,7 @@ class Group:
             cl = self.classes[k]
             if self.has_lunch and (cl.name == LUNCH_CLASS):
                 if t < self.lunch_earlyest_time or t > self.lunch_latest_time:
-                    Log.v('Lunch position invalid in order {:d}'.format(self.current_option))
+                    #Log.v('Lunch position invalid in order {:d}'.format(self.current_option))
                     self.curr_order_valid = False
             item = Sched_option_item(cl.name, self.class_room_options[cl.name], \
                     self.class_teacher_options[cl.name], t, t.add(cl.duration))
@@ -710,7 +710,7 @@ class CommonSched:
         ret = []
         for grp in cls.g_items:
             for item in grp.schedule:
-                s = ' '.join([grp.name, item.show_selection()])
+                s = ' '.join([grp.name, str(grp.current_option), item.show_selection()])
                 ret.append(s)
         return ret
 
@@ -757,7 +757,7 @@ def stat_schedule(items):
     jockers = 0
     universes = 0
     for it in items:
-        group, cl, start, stop, room, teacher = it.split()
+        group, unused, cl, start, stop, room, teacher = it.split()
 
         if teacher == LUNCH_TEACHER:
             continue
@@ -963,7 +963,7 @@ Log = log.Logger()
 G.use_progress_bar = True
 G.best_max = 10
 G.max_generates = -1
-G.use_jocker = True
+G.use_jocker = False
 
 Log.set_loglevel(log.VERBOSE)
 Log.set_output("stdout")

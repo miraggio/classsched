@@ -67,7 +67,7 @@ class WorkBookWriter:
         end_min = 0
 
         for s in items:
-            group, cl, start, stop, room, teacher = s.split()
+            group, unused, cl, start, stop, room, teacher = s.split()
             start = LU.str_time(start)
             stop = LU.str_time(stop)
 
