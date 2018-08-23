@@ -516,12 +516,12 @@ class Group:
 
             ret = cls.gen_next_option_move_bad(item_pos)
             if not ret:
-                Log.v("No more order options for ", cls.name)
+                Log.v("No more order options for {:s}".format(cls.name))
                 if not (use_jocker and moving_fwd):
                     return False
                 jocker_in_use = True
                 order_n, jocker_item_pos = sorted(order_rates, reverse=True, key=lambda a: a[1])[0]
-                Log.i("{:s}: try  jockers on option no {:d} statisfied items num {:d}".format(cls.name, order_n, jocker_item_pos))
+                Log.v("{:s}: try  jockers on option no {:d}".format(cls.name, order_n))
                 cls.gen_option_no(order_n)
             Log.v('Try next classes order {:d} options for {:s}'.format(cls.current_option, cls.name))
         # (0) end
@@ -566,6 +566,8 @@ class BusyCalendar:
 
         start_min, end_min = [startT.minutes(), endT.minutes()]
         for key in keys:
+            if key in self.ignore_list:
+                continue
             if key not in calendar.keys():
                 calendar[key] = []
             calendar[key].append([start_min, end_min])
@@ -636,20 +638,20 @@ class CommonSched:
     def adjust(self, max_num=-1, sched_save_cb=None, use_jocker=False):
         groups_num = len(self.g_items)
         current_gno = 0
-        with_jocker = True
-
-        totals = [grp.num_scheds for grp in self.g_items]
-        pb = LU.ProgressBarExtended(totals, 10, 'progress')
+        self.g_items[current_gno].set_first_option()
+        with_jocker = False
 
         while True:
-            progress = [grp.current_option for grp in self.g_items]
-            if G.use_progress_bar: pb.show(progress, G.n_scheds_found)
+            if G.use_progress_bar:
+                progress = [grp.current_option for grp in self.g_items]
+                G.pb.show(progress, G.n_scheds_found)
 
             grp = self.g_items[current_gno]
             Log.v("Trying to add {:s} to the schedule".format(grp.name))
             ret = grp.next_sched(self.busy_cal, with_jocker)
 
             if ret:
+                with_jocker = False
                 if current_gno < groups_num - 1:
                     Log.v("Moving to the next group")
                     current_gno += 1
@@ -668,6 +670,16 @@ class CommonSched:
                 Log.v("Try find more for same group")
                 continue
             else:
+                if with_jocker:
+                    Log.v("Failed to build schedule with Jocker for {:s}, STOP here".format(grp.name))
+                    return
+
+                Log.v("Failed to build schedule for {:s}".format(grp.name))
+                if use_jocker:
+                    with_jocker = True
+                    Log.v("Try build with schedule Jocker for {:s}".format(grp.name))
+                    continue
+
                 if current_gno > 0:
                     Log.v("Moving to the previous group")
                     current_gno -= 1
@@ -904,11 +916,15 @@ def main():
     for grp in G.groups:
         CS.add_group(grp)
 
-    G.best_max = 10
+    if G.use_progress_bar:
+        totals = [grp.num_scheds for grp in CS.g_items]
+        G.pb = LU.ProgressBarExtended(totals, 10, 'progress')
+
+    work_book = xls.WorkBookWriter(G.out_file_name)
 
     Log.i("Starting big work")
     Log.flush()
-    CS.adjust(500, save_scheduler, use_jocker=True)
+    CS.adjust(G.max_generates, save_scheduler, G.use_jocker)
     Log.i('Done, {:d} generated'.format(G.n_scheds_found))
 
     G.best_scheds.sort(key=lambda x: x[0])
@@ -917,9 +933,9 @@ def main():
         items = x[1]
         for it in items:
             Log.i(str(it))
-        G.work_book.export(items)
+        work_book.export(items)
 
-    G.save_workbook()
+    work_book.save()
 
 class Global:
     rooms = []
@@ -930,24 +946,27 @@ class Global:
     teacherlist = []
     classlist = []
     grouplist = []
-    work_book = None
     n_scheds_found = 0
-    scheds_to_save = None
+    scheds_to_save = []
     best_scheds = []
     best_collected = 0
     best_max = 10
+    max_generates = 100
     use_progress_bar = False
+    pb = None
+    use_jocker = False
+    out_file_name = "sched.xlsx"
 
-    def __init__(self, wb_name="sched.xlsx"):
-        self.work_book = xls.WorkBookWriter(wb_name)
-        self.scheds_to_save = []
+G = Global()
+Log = log.Logger()
 
-    def save_workbook(cls):
-        cls.work_book.save()
-
-G = Global("sched.xlsx")
 G.use_progress_bar = True
-Log = log.Debug(log.ERROR, "stdout")
+G.best_max = 10
+G.max_generates = -1
+G.use_jocker = True
+
+Log.set_loglevel(log.VERBOSE)
+Log.set_output("stdout")
 
 main()
 sys.exit()

@@ -99,7 +99,9 @@ class ProgressBarExtended:
     started = 0
     prefix = ""
     cnt = 0
-    def __init__(self, totals, bar_len, prefix):
+    outdev = 'stderr'
+    def __init__(self, totals, bar_len, prefix, outdev='stderr'):
+        self.outdev = outdev
         self.totals = totals
         self.cnt = len(totals)
         self.bar_len = bar_len
@@ -117,10 +119,14 @@ class ProgressBarExtended:
             out = '{:s} {:s}'.format(out, outs)
 
         out = '{:s} {:d} seconds {:d} found\r'.format(out, int(time.clock() - self.started), total_count)
-        sys.stderr.write(out)
-        sys.stderr.flush()
+        if self.outdev == 'stderr':
+                sys.stderr.write(out)
+                sys.stdout.flush()
+        else:
+                sys.stderr.write(out)
+                sys.stdout.flush()
     def done(self):
-        sys.stderr.write("\n")
+        sys.stdout.write("\n")
 
 
 class Time:

@@ -6,7 +6,7 @@ INFO = 2
 DEBUG = 3
 VERBOSE = 4
 
-class Debug:
+class Logger:
     level = 0
     out = None
     def __init__(self, level=INFO, out="stderr"):
@@ -19,6 +19,12 @@ class Debug:
                 sys.stdout.write(prefix + ": " + ' '.join(map(str,args)) + '\n')
             else:
                 sys.stderr.write(prefix + ": " + ' '.join(map(str,args)) + '\n')
+
+    def set_loglevel(self, level):
+	    self.level = level
+
+    def set_output(self, out):
+	    self.out = out
 
     def flush(self):
         if self.out == "stdout":
