@@ -100,14 +100,20 @@ class Attribute:
 
 class Class:
     name = ''
+    start_from = LU.Time()
+    start_to = LU.Time()
     duration = 0
     def __init__(self, name_duration):
         v = name_duration.split(":")
-        self.name, duration = v[0], v[1]
-        self.duration = int(duration)
-        #print self
+        self.name, self.duration,  = v[0], int(v[1])
+        if len(v) > 3:
+            self.start_from = LU.str_time(':'.join(v[2:4]))
+        if len(v) > 5:
+            self.start_to = LU.str_time(':'.join(v[4:6]))
+        Log.v('New Class {:s}'.format(str(self)))
+
     def __str__(self):
-        return '{:s}:{:d}'.format(self.name, self.duration)
+        return '{:s}:{:d} start window {:s}-{:s}'.format(self.name, self.duration, self.start_from, self.start_to)
 #-
 
 def minutes2Time(mins):
@@ -264,15 +270,12 @@ class Group:
     name = ''
     size = 0
     start = LU.Time(9, 0)
-    lunch_earlyest_time = None
-    lunch_latest_time = None
     classes = None
     class_room_options = None
     class_teacher_options = None
     num_scheds = 0
     current_option = 0
     schedule = None
-    has_lunch = False
     curr_order_valid = False
     failure_reason = None
     first_valid_option_no = -1
@@ -288,8 +291,6 @@ class Group:
         for cl in class_names:
             classes.append(Class(cl))
         self.classes = classes
-
-        self.__setup_lunch(fields)
 
         class_room_options = {}
         for cl in self.classes:
@@ -307,18 +308,6 @@ class Group:
 
         self.gen_permutations()
         self.set_first_option()
-
-    def __setup_lunch(cls, fields):
-        for x in fields:
-            if first_subf(x) == LUNCH_CLASS:
-                v = x.split(":")
-
-                cls.lunch_earlyest_time, cls.lunch_latest_time = \
-                        [LU.Time(int(v[2]),int(v[3])), LU.Time(int(v[4]),int(v[5]))]
-                cls.has_lunch = True
-                Log.d('{:s} has {:d} minutes lunch wich starts in a window {:s}-{:s}'.format(\
-                        cls.name, int(v[1]), cls.lunch_earlyest_time, cls.lunch_latest_time))
-                break
 
     def show(self):
         print "----------------"
@@ -348,12 +337,19 @@ class Group:
         self.curr_order_valid = True
         for k in order:
             cl = self.classes[k]
-            if self.has_lunch and (cl.name == LUNCH_CLASS):
-                if t < self.lunch_earlyest_time or t > self.lunch_latest_time:
-                    Log.v('Lunch position invalid in order {:d}'.format(self.current_option))
-                    self.curr_order_valid = False
+
+            if t != self.start and cl.name != LUNCH_CLASS and self.schedule[-1].class_name != LUNCH_CLASS:
+                t = t.add(G.break_min)
+            time_valid = cl.start_from.err() or (cl.start_to.err() and t == cl.start_from) \
+                        or (t >= cl.start_from and t <= cl.start_to)
+            if not time_valid:
+                Log.v('invalid order: {:s} cant start at {:s}'.format(cl.name, t))
+                self.curr_order_valid = False
+                break
+
             item = Sched_option_item(cl.name, self.class_room_options[cl.name], \
                     self.class_teacher_options[cl.name], t, t.add(cl.duration))
+
             t = t.add(cl.duration)
             self.schedule.append(item)
 
@@ -841,6 +837,9 @@ def get_input(f):
         line = line.strip()
         fields = line.split()
 
+        if len(fields) < 1:
+            continue
+
         if fields[0] == '#room':
             r = name_exist_in(G.rooms, fields[1])
             if r:
@@ -877,6 +876,13 @@ def get_input(f):
         if fields[0] == '#groups':
             G.grouplist = fields[1:]
             Log.d("Groups:", str(G.grouplist))
+
+        if fields[0] == '#break':
+            G.break_min = int(fields[1])
+
+        if fields[0] == '#use_jocker':
+            G.use_jocker = True
+
 #}
 
 
@@ -918,9 +924,9 @@ def main():
 
     if G.use_progress_bar:
         totals = [grp.num_scheds for grp in CS.g_items]
-        G.pb = LU.ProgressBarExtended(totals, 10, 'progress')
+        G.pb = LU.ProgressBarExtended(totals, 6, 'progress')
 
-    work_book = xls.WorkBookWriter(G.out_file_name)
+    work_book = xls.WorkBookWriter(G.out_file_name, 5)
 
     Log.i("Starting big work")
     Log.flush()
@@ -956,6 +962,7 @@ class Global:
     pb = None
     use_jocker = False
     out_file_name = "sched.xlsx"
+    break_min = False
 
 G = Global()
 Log = log.Logger()
@@ -963,7 +970,6 @@ Log = log.Logger()
 G.use_progress_bar = True
 G.best_max = 10
 G.max_generates = -1
-G.use_jocker = True
 
 Log.set_loglevel(log.VERBOSE)
 Log.set_output("stdout")
