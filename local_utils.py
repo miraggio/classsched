@@ -165,6 +165,9 @@ class Time:
             return self.h == -1 or self.m == -1
 #-
 
+def min2T(minutes):
+    return Time(minutes/60, minutes%60)
+
 def str_time(s):
     hm = s.split(":")
     return Time(int(hm[0]), int(hm[1]))

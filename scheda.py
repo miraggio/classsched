@@ -519,74 +519,91 @@ class BusyCalendar:
     cal = None
     grp_list = None
     ignore_list = None
-    def __init__(self, ignore=[]):
+    step = 10
+    start = 0
+    end = 24 *60
+    def __init__(self, step_min, Tstart, Tend, ignore=[]):
+        self.step = step_min
+        self.start = Tstart.minutes()
+        self.end = Tend.minutes()
         self.ignore_list = ignore
         self.cal = {}
         self.grp_list = {}
-        Log.v('BusyCalendar ignore_list {:s}'.format(str(self.ignore_list)))
+        Log.v('BusyCalendar {:s}-{:s}, step {:d} min, ignore_list {:s}'. \
+                format(Tstart, Tend, step_min, str(self.ignore_list)))
 
     def applicable(self, startT, endT, resource):
         if resource in self.ignore_list:
             return True
+
         if resource in self.cal.keys():
-            start_min, end_min = [startT.minutes(), endT.minutes()]
-            for t in range(start_min, end_min, G.time_step):
-                if t in self.cal[resource]:
+            idx1, idx2 = [self.__t2idx(startT.minutes()), self.__t2idx(endT.minutes())]
+            for idx in range(idx1, idx2):
+                if self.cal[resource][idx]:
+                    Log.v('calendar conflict {:s} {:s}-{:s} with {:s} at {:s}'.\
+                            format(resource, startT, endT, self.cal[resource][idx], LU.min2T(self.__idx2t(idx))))
                     return False
         return True
 
     def show_time_table(self, resource):
         if resource in self.cal.keys():
-            for t in self.cal[resource]:
-                Log.v('{:s} {:s}'.format(resource, minutes2Time(t)))
+            for idx in self.cal[resource]:
+                if self.cal[resource][idx]:
+                    Log.v(('{:s} {:s} {:s}'.format(resource, self.cal[resource][idx], LU.min2T(self.__idx2t(idx)))))
+
+    def __t2idx(self, t_min):
+        return (t_min - self.start) / self.step
+    def __idx2t(self, idx):
+        return self.start + self.step * idx
 
     def commit(self, group, startT, endT, resources):
-        start_min, end_min = [startT.minutes(), endT.minutes()]
-        added = False
+        idx1, idx2 = [self.__t2idx(startT.minutes()), self.__t2idx(endT.minutes())]
+
         for res in resources:
             if not res or res in self.ignore_list:
                 continue
 
-            if res not in self.cal.keys():
-                self.cal[res] = []
-            for t in range(start_min, end_min, G.time_step):
-                if t not in self.cal[res]:
-                     self.cal[res].append(t)
-
-            added = True
             if group not in self.grp_list.keys():
                 self.grp_list[group] = {}
             if res not in self.grp_list[group].keys():
-                self.grp_list[group][res] = [[start_min, end_min]]
+                self.grp_list[group][res] = []
+
+            if res not in self.cal.keys():
+                self.cal[res] = {}
+                for t in range(self.start, self.end, self.step):
+                    idx = self.__t2idx(t)
+                    if idx >= idx1 and idx < idx2:
+                        self.cal[res][idx] = group
+                        self.grp_list[group][res].append(idx)
+                    else:
+                        self.cal[res][idx] = None
             else:
-                self.grp_list[group][res].append([start_min, end_min])
-        if added:
-            self.__rebuild()
+                for idx in range(idx1, idx2):
+                    self.cal[res][idx] = group
+                    self.grp_list[group][res].append(idx)
+            Log.v('{:s} {:s} {:s}-{:s} added to BusyCalendar'.format(group, res, startT, endT))
+            self.show_time_table(res)
 
     def remove_group(self, group):
         if group in self.grp_list.keys():
-            Log.v('remove_group {:s}'.format(group))
-            del self.grp_list[group]
-            self.__rebuild()
-
-    def __rebuild(self):
-        self.cal = {}
-        for group in self.grp_list.keys():
             for res in self.grp_list[group].keys():
-                if res not in self.cal.keys():
-                    self.cal[res]=[]
-                for times in self.grp_list[group][res]:
-                    start_min, end_min = times
-                    for t in range(start_min, end_min, G.time_step):
-                        self.cal[res].append(t)
+                for idx in self.grp_list[group][res]:
+                    self.cal[res][idx] = None
+            del self.grp_list[group]
+            Log.v('Grpoup {:s} removed from BusyCalendar'.format(group))
 
     def show(self):
-        Log.d("BusyCalendar")
+        Log.v("BusyCalendar")
+        out = []
         for group in self.grp_list.keys():
             for res in self.grp_list[group].keys():
-                for times in self.grp_list[group][res]:
-                    Log.d(' - {:10s} {:10s} {:s}-{:s}'.format(group, \
-                            res, minutes2Time(times[0]), minutes2Time(times[1])))
+                t = []
+                for idx in sorted(self.grp_list[group][res]):
+                    t.append(str(LU.min2T(self.__idx2t(idx))))
+                out.append([res, group, t])
+
+        for x in sorted(out):
+            Log.v('{:10s} {:10s} {:s}'.format(x[0], x[1], str(x[2])))
 #}
 
 class CommonSched:
@@ -597,7 +614,7 @@ class CommonSched:
 
     def __init__(self):
         self.g_items = []
-        self.busy_cal = BusyCalendar([LUNCH_TEACHER, LUNCH_ROOM, JOCKER, UNIVERSE])
+        self.busy_cal = BusyCalendar(G.time_step, LU.Time(9,0), LU.Time(18,0), [LUNCH_TEACHER, LUNCH_ROOM, JOCKER, UNIVERSE])
         longest_patterns = {'group': 'n/a', 'depth': 0, 'paths': [], 'failures': []}
 
     def add_group(self, grp):
@@ -920,8 +937,10 @@ def main():
 
     Log.i("Starting big work")
     Log.flush()
+    t1 = time.clock()
     CS.adjust(G.max_generates, save_scheduler, G.use_jocker)
-    Log.i('Done, {:d} generated'.format(G.n_scheds_found))
+    t2 = time.clock()
+    sys.stderr.write('\nDone, {:d} generated in {:f} seconds\n'.format(G.n_scheds_found, t2 - t1))
     G.pb.done()
 
     if G.n_scheds_found:
@@ -963,8 +982,8 @@ Log = log.Logger()
 
 G.use_progress_bar = True
 G.best_max = 10
-G.max_generates = 1000
-Log.set_loglevel(log.VERBOSE)
+G.max_generates = 100
+Log.set_loglevel(log.ERROR)
 Log.set_output("stdout")
 
 main()
