@@ -100,15 +100,14 @@ class ProgressBarExtended:
     prefix = ""
     cnt = 0
     outdev = 'stderr'
-    def __init__(self, totals, bar_len, prefix, outdev='stderr'):
+    def __init__(self, totals, bar_len, outdev='stderr'):
         self.outdev = outdev
         self.totals = totals
         self.cnt = len(totals)
         self.bar_len = bar_len
         self.started = time.clock()
-        self.prefix = prefix
-    def show(self, counts, total_count):
-        out = self.prefix
+    def show(self, prefix, counts, total_count):
+        out = prefix
         for n in range(self.cnt):
             count = counts[n] + 1
             total = self.totals[n]
@@ -121,26 +120,40 @@ class ProgressBarExtended:
         out = '{:s} {:d} seconds {:d} found\r'.format(out, int(time.clock() - self.started), total_count)
         if self.outdev == 'stderr':
                 sys.stderr.write(out)
-                sys.stdout.flush()
+                sys.stderr.flush()
         else:
-                sys.stderr.write(out)
+                sys.stdout.write(out)
                 sys.stdout.flush()
     def done(self):
-        sys.stdout.write("\n")
+        if self.outdev == 'stderr':
+                sys.stderr.write("\n\n\n")
+                sys.stderr.flush()
+        else:
+                sys.stdout.write("\n\n\n")
+                sys.stdout.flush()
+
 
 
 class Time:
     h = 9
     m = 0
-    def __init__(self, h, m):
+    def __init__(self, h=-1, m=-1):
         self.h = h
         self.m = m
     def __str__(self):
+        if self.err():
+                return "n/a"
         return '{:02d}:{:02d}'.format(self.h, self.m)
     def __gt__(self, other):
         return self.minutes() > other.minutes()
     def __lt__(self, other):
         return self.minutes() < other.minutes()
+    def __ge__(self, other):
+        return self.minutes() >= other.minutes()
+    def __le__(self, other):
+        return self.minutes() <= other.minutes()
+    def __eq__(self, other):
+        return self.minutes() == other.minutes()
     def add(self, mins):
         mm = self.h * 60 + self.m + mins
         hh = int(mm / 60)
@@ -148,7 +161,12 @@ class Time:
         return Time(hh, mm)
     def minutes(self):
         return self.h * 60 + self.m
+    def err(self):
+            return self.h == -1 or self.m == -1
 #-
+
+def min2T(minutes):
+    return Time(minutes/60, minutes%60)
 
 def str_time(s):
     hm = s.split(":")

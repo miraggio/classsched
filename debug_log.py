@@ -5,6 +5,7 @@ WARNING = 1
 INFO = 2
 DEBUG = 3
 VERBOSE = 4
+EXTRAVERBOSE = 5
 
 class Logger:
     level = 0
@@ -46,6 +47,9 @@ class Logger:
 
     def i(cls, *args):
         cls.__pr("I", INFO, args)
+
+    def vvv(cls, *args):
+        cls.__pr("VE", EXTRAVERBOSE, args)
 
     def verbose(cls):
         return cls.level == VERBOSE

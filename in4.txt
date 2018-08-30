@@ -1,0 +1,51 @@
+#rooms 513 514 515-A 515-B 201-A1 201-A2 201-A3 201-A4 Universe1 Universe2
+#classes Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Lunch Anime EnglishMiddle
+#teachers  Ekaterina Mary Nastja Nastja Guranda Julia Alesia Vladlen Jocker2 Jocker1
+#groups K3-4A K5-6A K7-8A K7-8C K9-10C T11-12A T11-12B
+#
+#room 513     K3-4A EnglishKids Chess
+#room 513     English Humanities  WhoIsWho Animals Chess Games EnglishMiddle
+#room 514     English Humanities WhoIsWho Animals Chess Games EnglishMiddle
+#room 515-A   English Humanities WhoIsWho Animals Chess Games EnglishMiddle
+##room 515-B  English Humanities WhoIsWho Animals Chess Games EnglishMiddle
+#room 201-A1  English Humanities  WhoIsWho Animals Chess Games EnglishMiddle
+#room 201-A2  Science English Humanities  WhoIsWho Animals Chess Games EnglishMiddle
+#room 201-A3  Video English Humanities  WhoIsWho Animals Chess Games EnglishMiddle
+#room 201-A4  Art Games
+#room Canteen Lunch
+#
+#
+#teacher Ekaterina  English EnglishMiddle Games  WhoIsWho Humanities Video
+#teacher Mary       EnglishMiddle Video Humanities WhoIsWho
+#teacher Tatjana    English EnglishKids WhoIsWho Animals Games
+#teacher Nastja     EnglishKids Animals Games  Humanities WhoIsWho
+#teacher Guranda    English Animals Games  Humanities WhoIsWho
+#teacher Julia      WhoIsWho Video
+#teacher Alesia     Art
+#teacher Vladlen    Chess
+#teacher Andrew     Science
+#teacher LunchTeacher  Lunch
+
+
+#teacher Jocker1     Science K9-10B
+#teacher Jocker2     Art K9-10B
+#room Universe1  Science K9-10B
+#room Universe2  Art K9-10B
+
+
+#
+#group K3-4A     9:00   EnglishKids:90:9:00 Chess:30
+#group K5-6A     11:00  EnglishMiddle:60:11:00 Video:30 Science:30 Animals:30 Games:30 Art:40 Chess:30 Lunch:20:13:00:13:30
+#group K7-8A     9:00   EnglishMiddle:60:9:00 Video:30 Science:30 Animals:30 Games:30 Art:40 Chess:30 Lunch:20:10:30:11:30
+#group K7-8B     11:00  EnglishMiddle:60:11:00 Video:30 Science:30 Animals:30 Games:30 Art:40 Chess:30 Lunch:20:13:00:14:00
+#group K7-8C     12:00  EnglishMiddle:60:12:00 Video:30 Science:30 Animals:30 Games:30 Art:40 Chess:30 Lunch:20:13:30:14:30
+#group K9-10A    9:00   English:75:9:00 Video:30 Science:30  Art:45 Lunch:30:10:00:11:30 WhoIsWho:30 Hunanities:30
+#group K9-10B    9:00   English:75:9:00 Video:30 Science:30  Art:45 Lunch:30:10:00:11:30 WhoIsWho:30 Hunanities:30
+#group K9-10C    12:00  English:75:12:00 Video:30 Science:30  Art:45 Lunch:30:13:00:15:00 WhoIsWho:30 Hunanities:30#
+##group T11-12A   9:00   English:75:9:00 Video:30 Science:30  Art:45 Lunch:30:10:00:11:30 WhoIsWho:30 Hunanities:30
+##group T11-12B   11:00  English:75:11:00 Video:30 Science:30  Art:45 Lunch:30:13:00:15:00 WhoIsWho:30 Hunanities:30
+#
+
+#break 5
+##use_jocker
+
