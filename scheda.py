@@ -6,6 +6,7 @@ from operator import methodcaller
 import local_utils as LU
 import debug_log as log
 import xls
+import bisect
 
 # constants
 
@@ -315,7 +316,7 @@ class Group:
 
         self.gen_permutations()
         self.set_first_option()
-
+        Log.v('{:s} from {:s} calsses: {:s}'.format(self.name, self.start, str([cl.name for cl in self.classes])))
     def show(self):
         print "----------------"
         print "Group", self.name, 'starts at', self.start
@@ -336,7 +337,7 @@ class Group:
         return self.current_option
 
     def gen_current_option(self):
-        self.schedule = []
+        schedule = []
         size = len(self.classes)
         order = G.permuts[size][self.current_option]
 
@@ -345,12 +346,13 @@ class Group:
         for k in order:
             cl = self.classes[k]
 
-            if t != self.start and cl.name != LUNCH_CLASS and self.schedule[-1].class_name != LUNCH_CLASS:
+            if t != self.start and cl.name != LUNCH_CLASS and schedule[-1].class_name != LUNCH_CLASS:
                 t = t.add(G.break_min)
             time_valid = cl.start_from.err() or (cl.start_to.err() and t == cl.start_from) \
                         or (t >= cl.start_from and t <= cl.start_to)
+
             if not time_valid:
-                Log.vvv('invalid order: {:s} cant start at {:s}'.format(cl.name, t))
+                Log.v('invalid order: {:s} cant start at {:s}'.format(cl.name, t))
                 self.curr_order_valid = False
                 break
 
@@ -358,14 +360,20 @@ class Group:
                     self.class_teacher_options[cl.name], t, t.add(cl.duration))
 
             t = t.add(cl.duration)
-            self.schedule.append(item)
+            schedule.append(item)
 
         if self.curr_order_valid:
+            self.schedule = schedule
             for item in self.schedule:
                 item.rewind_room()
                 item.rewind_teacher()
 
-        Log.vvv('gen order for {:s}: [{:d}]={:s} valid {:d}'.format \
+        if self.name == 'K9-10C':
+            for it in schedule:
+                Log.v(str(it))
+
+
+        Log.v('gen order for {:s}: [{:d}]={:s} valid {:d}'.format \
                 (self.name, self.current_option, order, self.curr_order_valid))
 
         return self.curr_order_valid
@@ -519,91 +527,82 @@ class BusyCalendar:
     cal = None
     grp_list = None
     ignore_list = None
-    step = 10
-    start = 0
-    end = 24 *60
-    def __init__(self, step_min, Tstart, Tend, ignore=[]):
-        self.step = step_min
-        self.start = Tstart.minutes()
-        self.end = Tend.minutes()
+    def __init__(self, ignore=[]):
         self.ignore_list = ignore
         self.cal = {}
         self.grp_list = {}
-        Log.v('BusyCalendar {:s}-{:s}, step {:d} min, ignore_list {:s}'. \
-                format(Tstart, Tend, step_min, str(self.ignore_list)))
+        Log.v('BusyCalendar: ignore_list {:s}'.format(str(self.ignore_list)))
 
     def applicable(self, startT, endT, resource):
         if resource in self.ignore_list:
             return True
 
-        if resource in self.cal.keys():
-            idx1, idx2 = [self.__t2idx(startT.minutes()), self.__t2idx(endT.minutes())]
-            for idx in range(idx1, idx2):
-                if self.cal[resource][idx]:
-                    Log.v('calendar conflict {:s} {:s}-{:s} with {:s} at {:s}'.\
-                            format(resource, startT, endT, self.cal[resource][idx], LU.min2T(self.__idx2t(idx))))
-                    return False
-        return True
+        if resource not in self.cal.keys():
+            return True
+
+        t1, t2 = [startT.minutes(), endT.minutes()]
+        n = bisect.bisect(self.cal[resource], t1)
+        if  n % 2:
+            Log.v('calendar conflict {:s} {:s}-{:s} with {:s}-{:s}'.\
+                    format(resource, startT, endT, LU.min2T(self.cal[resource][n - 1]), LU.min2T(self.cal[resource][n])))
+            return False
+
+        if (n == len(self.cal[resource])) or (self.cal[resource][n] >= t2):
+            return True
+
+        Log.v('calendar conflict {:s} {:s}-{:s} with {:s} at {:s}'.\
+                            format(resource, startT, endT, LU.min2T(self.cal[resource][n]), LU.min2T(self.cal[resource][n + 1])))
+        return False
 
     def show_time_table(self, resource):
         if resource in self.cal.keys():
-            for idx in self.cal[resource]:
-                if self.cal[resource][idx]:
-                    Log.v(('{:s} {:s} {:s}'.format(resource, self.cal[resource][idx], LU.min2T(self.__idx2t(idx)))))
-
-    def __t2idx(self, t_min):
-        return (t_min - self.start) / self.step
-    def __idx2t(self, idx):
-        return self.start + self.step * idx
+            for n in range(len(self.cal[resource]) / 2):
+                Log.v(('{:s} {:s}-{:s}'.format(resource, \
+                        LU.min2T(self.cal[resource][n*2]), LU.min2T(self.cal[resource][n*2+1]))))
 
     def commit(self, group, startT, endT, resources):
-        idx1, idx2 = [self.__t2idx(startT.minutes()), self.__t2idx(endT.minutes())]
+        t1, t2 = [startT.minutes(), endT.minutes()]
 
         for res in resources:
-            if not res or res in self.ignore_list:
+            if (not res) or (res in self.ignore_list):
                 continue
 
-            if group not in self.grp_list.keys():
-                self.grp_list[group] = {}
-            if res not in self.grp_list[group].keys():
-                self.grp_list[group][res] = []
-
             if res not in self.cal.keys():
-                self.cal[res] = {}
-                for t in range(self.start, self.end, self.step):
-                    idx = self.__t2idx(t)
-                    if idx >= idx1 and idx < idx2:
-                        self.cal[res][idx] = group
-                        self.grp_list[group][res].append(idx)
-                    else:
-                        self.cal[res][idx] = None
+                self.cal[res] = [t1, t2]
             else:
-                for idx in range(idx1, idx2):
-                    self.cal[res][idx] = group
-                    self.grp_list[group][res].append(idx)
+                n = bisect.bisect(self.cal[res], t1)
+                self.cal[res].insert(n, t1)
+                self.cal[res].insert(n + 1, t2)
+
+            if res not in self.grp_list.keys():
+                self.grp_list[res] = {}
+            if group not in self.grp_list[res].keys():
+                self.grp_list[res][group] = [[t1, t2]]
+            else:
+                self.grp_list[res][group].append([t1, t2])
+
             Log.v('{:s} {:s} {:s}-{:s} added to BusyCalendar'.format(group, res, startT, endT))
-            self.show_time_table(res)
+            #self.show_time_table(res)
 
     def remove_group(self, group):
-        if group in self.grp_list.keys():
-            for res in self.grp_list[group].keys():
-                for idx in self.grp_list[group][res]:
-                    self.cal[res][idx] = None
-            del self.grp_list[group]
-            Log.v('Grpoup {:s} removed from BusyCalendar'.format(group))
+        for res in self.grp_list.keys():
+            if group in self.grp_list[res].keys():
+                for t1, t2 in self.grp_list[res][group]:
+                    n = bisect.bisect(self.cal[res], t1)
+                    del self.cal[res][n - 1]
+                    del self.cal[res][n - 1]
+
+                del self.grp_list[res][group]
+        Log.v('Grpoup {:s} removed from BusyCalendar'.format(group))
 
     def show(self):
         Log.v("BusyCalendar")
         out = []
-        for group in self.grp_list.keys():
-            for res in self.grp_list[group].keys():
-                t = []
-                for idx in sorted(self.grp_list[group][res]):
-                    t.append(str(LU.min2T(self.__idx2t(idx))))
-                out.append([res, group, t])
-
-        for x in sorted(out):
-            Log.v('{:10s} {:10s} {:s}'.format(x[0], x[1], str(x[2])))
+        for res in sorted(self.grp_list.keys()):
+            for group in sorted(self.grp_list[res].keys()):
+                for times in self.grp_list[res][group]:
+                    Log.v('{:10s} {:10s} {:s}-{:s}'.format(res, group, \
+                            LU.min2T(times[0]), LU.min2T(times[1])))
 #}
 
 class CommonSched:
@@ -614,7 +613,7 @@ class CommonSched:
 
     def __init__(self):
         self.g_items = []
-        self.busy_cal = BusyCalendar(G.time_step, LU.Time(9,0), LU.Time(18,0), [LUNCH_TEACHER, LUNCH_ROOM, JOCKER, UNIVERSE])
+        self.busy_cal = BusyCalendar([LUNCH_TEACHER, LUNCH_ROOM, JOCKER, UNIVERSE])
         longest_patterns = {'group': 'n/a', 'depth': 0, 'paths': [], 'failures': []}
 
     def add_group(self, grp):
@@ -983,7 +982,7 @@ Log = log.Logger()
 G.use_progress_bar = True
 G.best_max = 10
 G.max_generates = 100
-Log.set_loglevel(log.ERROR)
+Log.set_loglevel(log.VERBOSE)
 Log.set_output("stdout")
 
 main()
