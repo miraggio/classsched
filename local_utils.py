@@ -126,10 +126,10 @@ class ProgressBarExtended:
                 sys.stdout.flush()
     def done(self):
         if self.outdev == 'stderr':
-                sys.stderr.write("\n\n\n")
+                sys.stderr.write("\n")
                 sys.stderr.flush()
         else:
-                sys.stdout.write("\n\n\n")
+                sys.stdout.write("\n")
                 sys.stdout.flush()
 
 

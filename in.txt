@@ -1,0 +1,21 @@
+#rooms 513 514 515-A 515-B 201-A1 201-A2 201-A3 201-A4 Universe1 Universe2
+#classes Science English Video Humanities EnglishKids WhoIsWho Animals Art Chess Games Lunch Anime EnglishMiddle
+#teachers  Ekaterina Mary Nastja Nastja Guranda Julia Alesia Vladlen Jocker2 Jocker1
+#groups K3-4A K5-6A K7-8A K7-8C K9-10C T11-12A T11-12B
+#
+#room 513    EnglishMiddle  Science Animals
+#room 514    EnglishMiddle  Science Animals
+#room 515    Video
+#
+#
+#teacher Mary       EnglishMiddle  Science 
+#teacher Tatjana    EnglishMiddle  Science 
+#teacher Nastja     Video
+#teacher Ivan       Animals
+
+#group K5-6A     11:00  EnglishMiddle:60:11:00 Video:30 Science:30 Animals:30
+#group K7-8B     11:00  EnglishMiddle:60:11:00 Video:30 Science:30 Animals:30
+
+#break 5
+##use_jocker
+
