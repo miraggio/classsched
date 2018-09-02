@@ -114,7 +114,8 @@ class ProgressBarExtended:
             filled_len = int(round(self.bar_len * count / float(total)))
             percents = round(100.0 * count / float(total), 1)
             bar = '=' * filled_len + '-' * (self.bar_len - filled_len)
-            outs = '[{:s}]{:6.2f}%'.format(bar, percents);
+            #outs = '[{:s}]{:6.2f}%'.format(bar, percents);
+            outs = '[{:s}]{:6.2f}%'.format(bar, count);
             out = '{:s} {:s}'.format(out, outs)
 
         out = '{:s} {:d} seconds {:d} found\r'.format(out, int(time.clock() - self.started), total_count)
@@ -163,6 +164,10 @@ class Time:
         return self.h * 60 + self.m
     def err(self):
             return self.h == -1 or self.m == -1
+
+def times_overlap(s1, e1, s2, e2):
+    return (s1 >= s2 and s1 < e2) or (e1 > s2 and e1 <= e2)
+    
 #-
 
 def min2T(minutes):
