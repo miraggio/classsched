@@ -185,6 +185,7 @@ class Group:
     position_in_order = 0
     current_option = 0
     room_teacher_selected = None
+    found_scheds = 0
 
     def __init__(self, fields):
         self.name = fields[1]
@@ -221,7 +222,7 @@ class Group:
             if sched:
                 self.sched_options.append(sched)
                 found += 1
-            pb.show('{:10s}'.format(self.name), [n], found)
+            pb.show('{:10s}'.format(self.name), [n], [n], found)
 
         self.num_scheds = len(self.sched_options)
         self.sched_size = len(self.sched_options[0])
@@ -253,6 +254,7 @@ class Group:
         self.position_in_order = self.NOT_SELECTED
         self.current_option = self.NOT_SELECTED
         self.rewind_all_room_teachers()
+        self.found_scheds = 0
 
     def get_current_sched(self):
         if self.current_option in range(self.num_scheds):
@@ -309,9 +311,8 @@ class Group:
                 break
         if n in range(self.num_scheds):
             Log.v('{:s}: Found new order number {:d}'.format(self.name, n))
+            self.rewind_all()
             self.current_option = n
-            self.rewind_all_room_teachers()
-            self.position_in_order = self.NOT_SELECTED
             return True
 
         Log.v('{:s}: no more valid orders, stay on last No {:d})'.format(self.name, self.current_option))
@@ -333,14 +334,18 @@ class Group:
         room, teacher =  self.room_teacher[class_name][curr_rt_sel]
         return [room, teacher]
 
-    def try_build_new_sched(cls, busy_cal, use_jocker=False):
+    def try_build_new_sched(cls, busy_cal, try_only, use_jocker=False):
 
-        Log.v('try_build_new_sched: Group {:s} use Jocker {:s}'.format(cls.name, str(use_jocker)))
         ret = cls.set_next_option_skip_bad(cls.NOT_SELECTED)
         if not ret:
+            Log.d('try_build_new_sched: no more orders for group {:s}'.format(cls.name))
             return False
+        Log.d('try_build_new_sched: Group {:s} sched no {:d} use Jocker {:s}'.\
+                format(cls.name, cls.current_option, str(use_jocker)))
 
-        busy_cal.show()
+        if cls.name == 'K7-8A':
+            busy_cal.show()
+
         while True:
 
             schedule = cls.get_current_sched()
@@ -365,7 +370,6 @@ class Group:
                     if room not in free_rooms:
                         ret = busy_cal.applicable(item.tstart, item.tend, room)
                         if not ret:
-                            Log.v('room {:s} busy'.format(room))
                             busy_rooms.append(room)
                             continue
                         else:
@@ -385,8 +389,8 @@ class Group:
                     cls.room_teacher_selected[class_name] = rt_sel
                     continue
                 # failed to alloc resources for this class
-                Log.v('{:s}: failed to alloc resources for class {:s}'.\
-                        format(cls.name, str(item)))
+                Log.d('{:s}: order {:d} failed to alloc resources for class {:s}'.\
+                        format(cls.name, cls.current_option, str(item)))
                 break
 
             if ret:
@@ -394,15 +398,15 @@ class Group:
                 Log.v('{:s}: allocated resources for order {:d}'.format(cls.name, cls.current_option))
                 # save state
                 cls.position_in_order = item_pos
-                cls.commit_all_to_busy_cal(busy_cal)
-                busy_cal.show()
+                if not try_only:
+                    cls.commit_all_to_busy_cal(busy_cal)
                 return True
 
             # failed to assign room/teacher for class, need to change order
-            ret = cls.set_next_option_skip_bad(item_pos)
+            ret = cls.set_next_option_skip_bad(cls.NOT_SELECTED)
             if not ret:
                 break
-        Log.v('{:s}: no more orders'.format(cls.name))
+        Log.d('{:s}: no more orders'.format(cls.name))
         return False
 
     def try_change_current_sched(cls, busy_cal, use_jocker=False):
@@ -417,9 +421,11 @@ class Group:
             Log.v('{:s}: Try to change sel {:d} room {:s}/teacher{:s} for {:s}'. \
                     format(cls.name, curr_rt_sel, sel_room, sel_teacher, str(item)))
 
-            busy_cal.remove_allocation(cls.name, [sel_room, sel_teacher])
-            busy_cal.show()
-
+            busy_cal.remove_allocation(cls.name, sel_room, item.tstart)
+            busy_cal.remove_allocation(cls.name, sel_teacher, item.tstart)
+            #busy_cal.show()
+            Log.d('{:s}: class {:s} removed {:d} {:s}/{:s}'.format(cls.name, item.class_name,\
+                    curr_rt_sel, sel_room, sel_teacher))
             busy_rooms = []
             busy_teachers = []
             free_rooms = []
@@ -445,8 +451,9 @@ class Group:
                     busy_teachers.append(room)
                     continue
 
-                Log.v('{:s}: new pair {:d} found: {:s}/{:s} for {:s}'.\
-                        format(cls.name, rt_sel, room, teacher, str(item)))
+                Log.d('{:s}: class {:s} replaced {:d} {:s}/{:s} -> {:d} {:s}/{:s}'.\
+                        format(cls.name, item.class_name, curr_rt_sel, sel_room,\
+                        sel_teacher, rt_sel, room, teacher))
                 busy_cal.commit(cls.name, item.tstart, item.tend, [room, teacher])
                 cls.room_teacher_selected[class_name] = rt_sel
                 cls.position_in_order = item_pos
@@ -454,8 +461,10 @@ class Group:
 
             # Didn't manage to make changes in current class - add back to busy cal
             busy_cal.commit(cls.name, item.tstart, item.tend, [sel_room, sel_teacher])
+            Log.d('{:s}: class {:s} placed back {:d} {:s}/{:s}'.format(cls.name, item.class_name,\
+                    curr_rt_sel, sel_room, sel_teacher))
         # Didn't manage to make changes in this order
-        Log.v('Group {:s} no more options in current order {:d}'.format(cls.name, cls.current_option))
+        Log.d('Group {:s} no more options in current order {:d}'.format(cls.name, cls.current_option))
         return False
 
 
@@ -480,10 +489,13 @@ class Group:
         if ret:
             ret = self.try_change_current_sched(busy_cal, use_jocker)
             if ret:
+                self.found_scheds += 1
                 return True
             # thid oredr is over - remove whole group from busy calendar
             busy_cal.remove_group(self.name)
-        ret = self.try_build_new_sched(busy_cal, use_jocker)
+        ret = self.try_build_new_sched(busy_cal, False, use_jocker)
+        if ret:
+            self.found_scheds += 1
         return ret
 #}
 
@@ -541,8 +553,7 @@ class BusyCalendar:
 
             if group == 'K9-10A' and 'Tatjana' == res:
                 Log.d('---{:s}/{:s} {:s} {:s} {:s}-{:s} added to BusyCalendar'.format(resources[1], resources[0], group, res, startT, endT))
-                if 'Tatjana' == res:
-                    self.show()
+
             Log.v('{:s} {:s} {:s}-{:s} added to BusyCalendar'.format(group, res, startT, endT))
             #self.show_time_table(res)
 
@@ -555,24 +566,24 @@ class BusyCalendar:
                     del self.cal[res][n - 1]
 
                 del self.grp_list[res][group]
-        Log.v('Grpoup {:s} removed from BusyCalendar'.format(group))
+        Log.d('Grpoup {:s} removed from BusyCalendar'.format(group))
 
-    def remove_allocation(self, group, resources):
-        for res in resources:
-            if res not in self.grp_list.keys():
+    def remove_allocation(self, group, res, tstart):
+        if res not in self.grp_list.keys():
+            return
+        if group not in self.grp_list[res].keys():
+            return
+
+        tmp = []
+        for t1, t2 in self.grp_list[res][group]:
+            if t1 != tstart.minutes():
+                tmp.append([t1, t2])
                 continue
-            if group not in self.grp_list[res].keys():
-                continue
-
-            for t1, t2 in self.grp_list[res][group]:
-                if group == 'K9-10A' and 'Tatjana' == res:
-                    Log.d('Removing K9-10A Tatjana {:s}-{:s}'.format(LU.min2T(t1), LU.min2T(t2)))
-                n = bisect.bisect(self.cal[res], t1)
-                del self.cal[res][n - 1]
-                del self.cal[res][n - 1]
-
-            del self.grp_list[res][group]
-            Log.v('Grpoup {:s} {:s} removed from BusyCalendar'.format(group, res))
+            n = bisect.bisect(self.cal[res], t1)
+            del self.cal[res][n - 1]
+            del self.cal[res][n - 1]
+            Log.v('Grpoup {:s} {:s} {:s}-{:s} removed from BusyCalendar'.format(group, res, LU.min2T(t1), LU.min2T(t2)))
+        self.grp_list[res][group] = tmp
 
     def show(self):
         Log.v("BusyCalendar")
@@ -583,11 +594,14 @@ class BusyCalendar:
                     Log.v('{:10s} {:10s} {:s}-{:s}'.format(res, group, \
                             LU.min2T(times[0]), LU.min2T(times[1])))
 
-    def show_time_table(self, resource):
-        if resource in self.cal.keys():
-            for n in range(len(self.cal[resource]) / 2):
-                Log.v(('{:s} {:s}-{:s}'.format(resource, \
-                        LU.min2T(self.cal[resource][n*2]), LU.min2T(self.cal[resource][n*2+1]))))
+    def show_time_table(self):
+        for resource in self.cal.keys():
+            self.show_time_table_for_res(resource)
+
+    def show_time_table_for_res(self, resource):
+        for n in range(len(self.cal[resource]) / 2):
+            Log.d(('{:s} {:s}-{:s}'.format(resource, \
+                    LU.min2T(self.cal[resource][n*2]), LU.min2T(self.cal[resource][n*2+1]))))
 
     def state(self):
         ret = ['BusyCalendar']
@@ -633,7 +647,8 @@ class CommonSched:
 
             if G.use_progress_bar:
                 progress = [g.current_option for g in self.g_items]
-                G.pb.show('{:10}'.format(grp.name), progress, G.n_scheds_found)
+                found = [g.found_scheds for g in self.g_items]
+                G.pb.show('{:10}'.format(grp.name), progress, found, G.n_scheds_found)
 
             Log.d("Trying to add {:s} to the schedule".format(grp.name))
             ret = grp.update_schedule(self.busy_cal, with_jocker)
@@ -641,6 +656,17 @@ class CommonSched:
             if ret:
                 Log.d("Succeeded to build schedule for {:s} {:s}".format(grp.name, grp.short_state()))
                 if current_gno < groups_num - 1:
+                    for gno in range(current_gno + 1, groups_num):
+                        g = self.g_items[gno]
+                        g.rewind_all()
+                        rc = g.try_build_new_sched(self.busy_cal, True)
+                        if not rc:
+                            Log.w('{:s} not compartible with {:s}, Try to find more for same group'.format(grp.name, g.name))
+                            break
+                    if not rc:
+                        Log.v("Try to find more for same group {:s}".format(grp.name))
+                        continue
+
                     Log.v("Moving to the next group {:s}".format(self.g_items[current_gno + 1].name))
                     current_gno += 1
                     self.g_items[current_gno].rewind_all()
@@ -650,9 +676,9 @@ class CommonSched:
                 Log.v("Last group added, saving schedule (Jocker={:s})".format(str(with_jocker)))
                 if sched_save_cb:
                     sched_save_cb(self.current_sched_as_list())
-                    if not self.verify_current():
-                        self.dump()
-                        return
+                    #if not self.verify_current():
+                    #    self.dump()
+                    #    return
                     if max_num > 0:
                         max_num -= 1
                         if max_num == 0:
@@ -984,7 +1010,7 @@ G.use_progress_bar = True
 G.best_max = 10
 G.max_generates = 100
 
-Log.set_loglevel(log.DEBUG)
+Log.set_loglevel(log.WARNING)
 Log.set_output("stdout")
 
 main()
