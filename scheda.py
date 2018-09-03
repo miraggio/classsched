@@ -186,6 +186,7 @@ class Group:
     current_option = 0
     room_teacher_selected = None
     found_scheds = 0
+    rt_selections = None
 
     def __init__(self, fields):
         self.name = fields[1]
@@ -195,6 +196,7 @@ class Group:
         self.room_teacher = {}
         self.position_in_order = self.NOT_SELECTED
         self.current_option = self.NOT_SELECTED
+        self.rt_selections = {}
 
         class_names = filter_from_dict(fields, G.classlist)
 
@@ -208,6 +210,7 @@ class Group:
             x = [room_options, teacher_options]
             self.room_teacher[cl.name] = list(itertools.product(*x))
             Log.v('{:s} {:s} {:s}'.format(self.name, cl.name, self.room_teacher[cl.name]))
+            self.rt_selections[cl.name] = {'r': room_options, 't': teacher_options, 'r_sel': self.NOT_SELECTED, 'r_sel': self.NOT_SELECTED}
 
         self.classes = classes
 
@@ -248,6 +251,8 @@ class Group:
     def rewind_all_room_teachers(self):
         for cl in self.classes:
             self.room_teacher_selected[cl.name] = self.NOT_SELECTED
+            self.rt_selections[cl.name]['r_sel'] = self.NOT_SELECTED
+            self.rt_selections[cl.name]['t_sel'] = self.NOT_SELECTED
 
     def rewind_all(self):
         Log.v('{:s} rewind all'.format(self.name))
