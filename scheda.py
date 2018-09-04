@@ -234,6 +234,9 @@ class Group:
     def get_compat_orders(self):
         return self.compat_orders[-1]
 
+    def set_top_compat_orders(self, orders):
+        self.compat_orders[-1] = orders
+
     def room_selection(self, class_name):
         r_sel = self.rt_selections[class_name]['r_sel']
         r = self.rt_selections[class_name]['r'][r_sel]
@@ -312,35 +315,28 @@ class Group:
 
         return schedule
 
-    def get_compat_skip_bad(self, bad_pos, skip_pos):
-        # we want to make sure option in position 'bad_pos' has moved
-        # to other position in new order
-
-        if bad_pos in range(self.sched_size):
-            curr_sched = self.get_sched_nr(skip_pos)
-            bad_class = curr_sched[bad_pos]
-            Log.v('{:s}: Change order: skip orders with calss {:s} at position {:d}'.\
-                    format(self.name, bad_class.class_name, bad_pos))
-            filter_bad_pos = True
-        else:
-            Log.v('{:s}: Change order (starting form {:d})'.format(self.name, skip_pos + 1))
-            filter_bad_pos = False
-
-        n = self.NOT_SELECTED
+    def get_compat(self, skip_pos):
+        Log.v('{:s}: Change order (starting form {:d})'.format(self.name, skip_pos + 1))
+        n = skip_pos + 1
         compat = self.get_compat_orders()
-        for n in range(skip_pos + 1, len(compat)):
-            sched = compat[n]
-            if (not filter_bad_pos) or (sched[bad_pos].class_name != bad_class.class_name):
-                break
         if n in range(len(compat)):
             Log.v('{:s}: Found new order number {:d}'.format(self.name, n))
             return n
-
         Log.v('{:s}: no more valid orders, stay on last No {:d})'.format(self.name, self.current_option))
         return self.NOT_SELECTED
 
-    def set_next_compat_skip_bad(self, bad_pos):
-        n = self.get_compat_skip_bad(bad_pos, self.current_option)
+    def remove_bad_orders(self, bad_pos, bad_class):
+        compat = self.get_compat_orders()
+        good = []
+        for sched in compat:
+            if sched[bad_pos].class_name != bad_class:
+                good.append(sched)
+        self.set_top_compat_orders(good)
+        Log.v('{:s}: Remove orders with calss {:s} at position {:d}: {:d} removed'.\
+                format(self.name, bad_class, bad_pos, len(compat) - len(good)))
+
+    def get_next_compat_order(self):
+        n = self.get_compat(self.current_option)
         if n != self.NOT_SELECTED:
             self.set_current_order(n)
             compat = self.get_compat_orders()
@@ -380,7 +376,7 @@ class Group:
         pos = cls.NOT_SELECTED
         compat_orders = []
         while True:
-            pos = cls.get_compat_skip_bad(item_pos, pos)
+            pos = cls.get_compat(pos)
             if pos == cls.NOT_SELECTED:
                 break
 
@@ -399,6 +395,7 @@ class Group:
                     if ret:
                         break
                 if not ret:
+                    cls.remove_bad_orders(item_pos, class_name)
                     break
                 for t_sel in range(len(cls.rt_selections[class_name]['t'])):
                     teacher = cls.rt_selections[class_name]['t'][t_sel]
@@ -406,6 +403,7 @@ class Group:
                     if ret:
                         break
                 if not ret:
+                    cls.remove_bad_orders(item_pos, class_name)
                     break
 
                 found = True
@@ -420,7 +418,7 @@ class Group:
 
     def try_build_new_sched(cls, busy_cal, try_only, use_jocker=False):
 
-        ret = cls.set_next_compat_skip_bad(cls.NOT_SELECTED)
+        ret = cls.get_next_compat_order()
         if not ret:
             Log.d('try_build_new_sched: no more orders for group {:s}'.format(cls.name))
             return False
@@ -444,6 +442,7 @@ class Group:
                     if ret:
                         break
                 if not ret:
+                    cls.remove_bad_orders(item_pos, class_name)
                     break
                 for t_sel in range(len(cls.rt_selections[class_name]['t'])):
                     teacher = cls.rt_selections[class_name]['t'][t_sel]
@@ -451,6 +450,7 @@ class Group:
                     if ret:
                         break
                 if not ret:
+                    cls.remove_bad_orders(item_pos, class_name)
                     break
 
                 Log.v('{:s}: new pair found: {:s}/{:s} for {:s}'.\
@@ -475,7 +475,7 @@ class Group:
                     format(cls.name, cls.current_option, str(item)))
 
             # failed to assign room/teacher for class, need to change order
-            ret = cls.set_next_compat_skip_bad(item_pos)
+            ret = cls.get_next_compat_order()
             if not ret:
                 break
         Log.d('{:s}: no more orders'.format(cls.name))
