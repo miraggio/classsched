@@ -178,7 +178,7 @@ class Group:
     num_scheds = 0
     schedule = None
     room_teacher = None
-    sched_options = None
+    compat_orders = None
     NOT_SELECTED = -1
     sched_size = 0
     # state
@@ -209,7 +209,8 @@ class Group:
 
         self.classes = classes
 
-        self.sched_options = []
+        self.compat_orders = []
+        sched_options_all = []
         permuts = list(itertools.permutations(range(len(self.classes))))
         num = len(permuts)
         pb = LU.ProgressBarExtended([num], 20)
@@ -218,15 +219,20 @@ class Group:
             order = permuts[n]
             sched = self.order_to_sched(order)
             if sched:
-                self.sched_options.append(sched)
+                sched_options_all.append(sched)
                 found += 1
             pb.show('{:10s}'.format(self.name), [n], [n], found)
 
-        self.num_scheds = len(self.sched_options)
-        self.sched_size = len(self.sched_options[0])
+        self.compat_orders.append(sched_options_all)
+
+        self.num_scheds = len(sched_options_all)
+        self.sched_size = len(sched_options_all[0])
         Log.v('{:s}: {:d} valid orders from {:d} total orders'.format(self.name, self.num_scheds, num))
         Log.v('{:s} from {:s} calsses: {:s}'.format(self.name, self.start, str([cl.name for cl in self.classes])))
         pb.done()
+
+    def get_compat_orders(self):
+        return self.compat_orders[-1]
 
     def room_selection(self, class_name):
         r_sel = self.rt_selections[class_name]['r_sel']
@@ -268,10 +274,14 @@ class Group:
         self.rewind_all_room_teachers()
         self.found_scheds = 0
 
-    def get_current_sched(self):
-        if self.current_option in range(self.num_scheds):
-            return self.sched_options[self.current_option]
+    def get_sched_nr(self, n):
+        compat = self.get_compat_orders()
+        if n in range(len(compat)):
+            return compat[n]
         return None
+
+    def get_current_sched(self):
+        return self.get_sched_nr(self.current_option)
 
     def show(self):
         print "----------------"
@@ -302,33 +312,49 @@ class Group:
 
         return schedule
 
-    def set_next_option_skip_bad(self, bad_pos):
+    def get_compat_skip_bad(self, bad_pos, skip_pos):
         # we want to make sure option in position 'bad_pos' has moved
         # to other position in new order
 
         if bad_pos in range(self.sched_size):
-            curr_sched = self.get_current_sched()
+            curr_sched = self.get_sched_nr(skip_pos)
             bad_class = curr_sched[bad_pos]
             Log.v('{:s}: Change order: skip orders with calss {:s} at position {:d}'.\
                     format(self.name, bad_class.class_name, bad_pos))
             filter_bad_pos = True
         else:
-            Log.v('{:s}: Change order'.format(self.name))
+            Log.v('{:s}: Change order (starting form {:d})'.format(self.name, skip_pos + 1))
             filter_bad_pos = False
 
         n = self.NOT_SELECTED
-        for n in range(self.current_option + 1, self.num_scheds):
-            sched = self.sched_options[n]
+        compat = self.get_compat_orders()
+        for n in range(skip_pos + 1, len(compat)):
+            sched = compat[n]
             if (not filter_bad_pos) or (sched[bad_pos].class_name != bad_class.class_name):
                 break
-        if n in range(self.num_scheds):
+        if n in range(len(compat)):
             Log.v('{:s}: Found new order number {:d}'.format(self.name, n))
-            self.rewind_all()
-            self.current_option = n
-            return True
+            return n
 
         Log.v('{:s}: no more valid orders, stay on last No {:d})'.format(self.name, self.current_option))
-        return False
+        return self.NOT_SELECTED
+
+    def set_next_compat_skip_bad(self, bad_pos):
+        n = self.get_compat_skip_bad(bad_pos, self.current_option)
+        if n != self.NOT_SELECTED:
+            self.set_current_order(n)
+            compat = self.get_compat_orders()
+            return compat[n]
+        return None
+
+    def set_current_order(self, n):
+        Log.v('{:s}: set_current_order nr {:d}'.format(self.name, n))
+        self.rewind_all()
+        self.current_option = n
+
+    def drop_last_compat(self):
+        if len(self.compat_orders):
+            del self.compat_orders[-1]
 
     def get_num_orders(self):
         return self.num_scheds
@@ -346,17 +372,60 @@ class Group:
         t, t_sel = self.teacher_selection(class_name)
         return [r, t]
 
+    def build_compat_orders(cls, busy_cal):
+
+        Log.d('build_compat_orders:  group {:s}'.format(cls.name))
+
+        item_pos = cls.NOT_SELECTED
+        pos = cls.NOT_SELECTED
+        compat_orders = []
+        while True:
+            pos = cls.get_compat_skip_bad(item_pos, pos)
+            if pos == cls.NOT_SELECTED:
+                break
+
+            schedule = cls.get_sched_nr(pos)
+
+            for item_pos in range(cls.sched_size):
+
+                item = schedule[item_pos]
+                class_name = item.class_name
+                Log.v('{:s}: Try set room/teacher for {:s}'.format(cls.name, str(item)))
+
+                ret = False
+                for r_sel in range(len(cls.rt_selections[class_name]['r'])):
+                    room = cls.rt_selections[class_name]['r'][r_sel]
+                    ret = busy_cal.applicable(item.tstart, item.tend, room)
+                    if ret:
+                        break
+                if not ret:
+                    break
+                for t_sel in range(len(cls.rt_selections[class_name]['t'])):
+                    teacher = cls.rt_selections[class_name]['t'][t_sel]
+                    ret = busy_cal.applicable(item.tstart, item.tend, teacher)
+                    if ret:
+                        break
+                if not ret:
+                    break
+
+                found = True
+                compat_orders.append(schedule)
+                item_pos = cls.NOT_SELECTED
+                break
+
+        found = len(compat_orders)
+        cls.compat_orders.append(compat_orders)
+        Log.w('Group: {:s}: found {:d} compat orders'.format(cls.name, found))
+        return found > 0
+
     def try_build_new_sched(cls, busy_cal, try_only, use_jocker=False):
 
-        ret = cls.set_next_option_skip_bad(cls.NOT_SELECTED)
+        ret = cls.set_next_compat_skip_bad(cls.NOT_SELECTED)
         if not ret:
             Log.d('try_build_new_sched: no more orders for group {:s}'.format(cls.name))
             return False
         Log.d('try_build_new_sched: Group {:s} sched no {:d} use Jocker {:s}'.\
                 format(cls.name, cls.current_option, str(use_jocker)))
-
-        if cls.name == 'K7-8A':
-            busy_cal.show()
 
         while True:
 
@@ -406,7 +475,7 @@ class Group:
                     format(cls.name, cls.current_option, str(item)))
 
             # failed to assign room/teacher for class, need to change order
-            ret = cls.set_next_option_skip_bad(item_pos)
+            ret = cls.set_next_compat_skip_bad(item_pos)
             if not ret:
                 break
         Log.d('{:s}: no more orders'.format(cls.name))
@@ -663,9 +732,10 @@ class CommonSched:
                 if current_gno < groups_num - 1:
                     for gno in range(current_gno + 1, groups_num):
                         g = self.g_items[gno]
-                        g.rewind_all()
-                        rc = g.try_build_new_sched(self.busy_cal, True)
+                        rc = g.build_compat_orders(self.busy_cal)
                         if not rc:
+                            for k in range(current_gno + 1, gno + 1):
+                                self.g_items[k].drop_last_compat()
                             Log.w('{:s} not compartible with {:s}, Try to find more for same group'.format(grp.name, g.name))
                             break
                     if not rc:
@@ -696,6 +766,8 @@ class CommonSched:
 
                 if current_gno > 0:
                     Log.d("Moving to the previous group {:s}".format(self.g_items[current_gno - 1].name))
+                    for k in range(current_gno + 1, groups_num):
+                        self.g_items[k].drop_last_compat()
                     current_gno -= 1
                     continue
 
